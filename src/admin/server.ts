@@ -12,7 +12,7 @@ import { blocklistJson, blocklistTxt, stixBundle } from '../integrations/feeds.j
 import { MITRE } from '../integrations/outputs.js';
 
 const DASHBOARD_DIR = fileURLToPath(new URL('../../dashboard/', import.meta.url));
-const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
 interface Deps { cfg: Config; engine: Engine; store: Store; decoys: DecoyRouter; startedAt: number }
 

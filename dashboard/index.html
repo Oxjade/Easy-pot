@@ -6,63 +6,69 @@
   <meta name="color-scheme" content="dark">
   <title>EasyPot</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Login -->
+  <!-- Sign in -->
   <section id="login" class="login" hidden>
     <div id="login-art" class="login-art" aria-hidden="true"></div>
-    <form id="login-form" class="login-card">
-      <span class="eyebrow"><span class="logo logo-xs" aria-hidden="true"></span>EasyPot · Deception layer</span>
-      <h1>Catch AI agents<br>before they find you.</h1>
-      <p class="lede">Decoys, honeytokens and tripwires. Enter the admin token from your EasyPot config or startup log.</p>
-      <label for="token-input" class="sr-only">Admin token</label>
-      <div class="command">
-        <input id="token-input" type="password" autocomplete="current-password" placeholder="Admin token" required>
-        <button class="btn btn-primary" type="submit">Open dashboard</button>
+    <form id="login-form" class="login-form">
+      <svg class="mark mark-lg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 20.1 7.3v9.4L12 21.4 3.9 16.7V7.3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 8.3 15.2 10.15v3.7L12 15.7 8.8 13.85v-3.7z" fill="currentColor"/></svg>
+      <h1>Sign in to EasyPot</h1>
+      <p class="login-lede">Paste the admin token from your config file or the startup log.</p>
+      <label for="token-input" class="field-label">Admin token</label>
+      <div class="login-row">
+        <input id="token-input" type="password" autocomplete="current-password" spellcheck="false" required>
+        <button class="btn btn-primary" type="submit">Sign in</button>
       </div>
       <p id="login-error" class="error" role="alert"></p>
     </form>
-    <div class="login-tile" aria-hidden="true"><span class="logo logo-lg"></span></div>
   </section>
 
   <!-- App -->
   <div id="app" class="app" hidden>
     <aside class="sidebar">
-      <div class="brand"><span class="logo-tile-sm" aria-hidden="true"><span class="logo"></span></span><span>EasyPot</span></div>
-      <nav class="nav" aria-label="Main">
-        <a href="#/overview" data-route="overview"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>Overview</a>
-        <a href="#/actors" data-route="actors"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c.9-3.9 3.9-6 7.5-6s6.6 2.1 7.5 6"/></svg>Attackers</a>
-        <a href="#/events" data-route="events"><svg viewBox="0 0 24 24"><path d="M8.5 6.5h12M8.5 12h12M8.5 17.5h8"/><circle cx="4.5" cy="6.5" r=".6"/><circle cx="4.5" cy="12" r=".6"/><circle cx="4.5" cy="17.5" r=".6"/></svg>Event log</a>
-        <a href="#/decoys" data-route="decoys"><svg viewBox="0 0 24 24"><path d="M12 2.8 3.8 7.3v9.4l8.2 4.5 8.2-4.5V7.3z"/><path d="M3.8 7.3 12 11.8l8.2-4.5M12 11.8v9.4"/></svg>Decoys</a>
-        <a href="#/blocks" data-route="blocks"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></svg>Blocklist</a>
-        <a href="#/integrations" data-route="integrations"><svg viewBox="0 0 24 24"><path d="M9 3.5v4M15 3.5v4M6.5 7.5h11v3.5a5.5 5.5 0 0 1-11 0zM12 16.5v4"/></svg>Integrations</a>
-      </nav>
-      <div class="side-foot">
-        <div class="protect"><span class="pulse" aria-hidden="true"></span><span>Protecting</span></div>
-        <div id="site-name" class="site-name">—</div>
-        <div id="upstream" class="mono muted small">—</div>
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 20.1 7.3v9.4L12 21.4 3.9 16.7V7.3z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8.3 15.2 10.15v3.7L12 15.7 8.8 13.85v-3.7z" fill="currentColor"/></svg>
+        <span>EasyPot</span>
       </div>
+      <div class="site" title="The site EasyPot is protecting">
+        <span class="pulse" aria-hidden="true"></span>
+        <div class="site-text">
+          <div id="site-name" class="site-name">—</div>
+          <div id="upstream" class="site-upstream mono">—</div>
+        </div>
+      </div>
+      <nav class="nav" aria-label="Main">
+        <div class="nav-group">Monitor</div>
+        <a href="#/overview" data-route="overview" data-icon="overview">Overview</a>
+        <a href="#/actors" data-route="actors" data-icon="attackers">Attackers</a>
+        <a href="#/events" data-route="events" data-icon="events">Event log</a>
+        <div class="nav-group">Defend</div>
+        <a href="#/decoys" data-route="decoys" data-icon="decoys">Decoys</a>
+        <a href="#/blocks" data-route="blocks" data-icon="blocks">Blocklist</a>
+        <div class="nav-group">Connect</div>
+        <a href="#/integrations" data-route="integrations" data-icon="integrations">Integrations</a>
+      </nav>
+      <button id="logout" class="nav-foot" type="button" data-icon="logout">Sign out</button>
     </aside>
 
     <main class="main">
-      <header class="topbar">
-        <div class="crumb small"><span class="faint">Dashboard</span><span class="faint">/</span><span id="crumb">Overview</span></div>
-        <div class="top-actions">
-          <span id="live" class="live" title="Live event stream"><span class="dot"></span>Live</span>
-          <select id="range" aria-label="Time range">
-            <option value="24">Last 24 hours</option>
-            <option value="168">Last 7 days</option>
-            <option value="720">Last 30 days</option>
-          </select>
-          <button id="logout" class="btn btn-ghost" type="button">Sign out</button>
+      <header class="page-head">
+        <div class="page-head-text">
+          <h1 id="page-title">Overview</h1>
+          <p id="page-sub"></p>
+        </div>
+        <div class="page-head-actions">
+          <span id="live" class="live" title="Live event stream"><span class="dot" aria-hidden="true"></span><span id="live-text">Connecting</span></span>
+          <div id="range" class="seg" role="group" aria-label="Time range">
+            <button type="button" data-hours="24" class="on">24 hours</button>
+            <button type="button" data-hours="168">7 days</button>
+            <button type="button" data-hours="720">30 days</button>
+          </div>
         </div>
       </header>
-      <section class="page-hero">
-        <span class="eyebrow"><span class="logo logo-xs" aria-hidden="true"></span><span id="page-eyebrow">Live threat picture</span></span>
-        <h1 id="page-title">Overview</h1>
-        <p id="page-sub" class="muted"></p>
-      </section>
       <div id="view" class="view"></div>
     </main>
   </div>

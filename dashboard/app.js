@@ -1,9 +1,11 @@
 // EasyPot dashboard — dependency-free. Everything that comes from traffic (paths, user agents,
 // self-reported agent text) is attacker-controlled, so it is ALWAYS escaped before rendering.
+import { icon } from './icons.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const fmt = n => Number(n ?? 0).toLocaleString();
+const plural = (n, one, many) => `${fmt(n)} ${Number(n) === 1 ? one : many}`;
 const SEVS = ['critical', 'high', 'medium', 'low', 'info'];
 const SEV_COLOR = { critical: 'var(--sev-critical)', high: 'var(--sev-high)', medium: 'var(--sev-medium)', low: 'var(--sev-low)', info: 'var(--sev-info)' };
 const CLASS_LABEL = { llm_agent: 'AI agent', scanner: 'Scanner', bot: 'Bot', crawler: 'Crawler', human: 'Human', unknown: 'Unknown' };
@@ -34,12 +36,19 @@ const SIGNAL_LABEL = {
   declared_ai_crawler: 'Declared AI crawler',
   blocked_request: 'Blocked request',
 };
+const ACTION_LABEL = { block: 'Blocked', labyrinth: 'Sent to labyrinth', tarpit: 'Slowed down', allow: 'Allowed' };
+const PAYLOAD_LABEL = { sqli: 'SQL injection', nosqli: 'NoSQL injection', xss: 'Cross-site scripting', path_traversal: 'Path traversal', command_injection: 'Command injection', ssti: 'Template injection', ssrf: 'Server-side request forgery' };
+const CATEGORY_LABEL = { cve: 'CVE exploit traps', secrets: 'Secret files', source: 'Source control', database: 'Database dumps', admin: 'Admin panels', api: 'Internal APIs', debug: 'Debug endpoints' };
 // Low-weight context signals: useful in an attacker's timeline, noise in a summary.
 const NOISE = new Set(['blocked_request', 'non_browser_client', 'http_library', 'headless_browser', 'missing_user_agent', 'declared_ai_crawler']);
 const label = s => SIGNAL_LABEL[s] ?? s.replace(/_/g, ' ');
-const sevBadge = s => `<span class="sev sev-${esc(s)}">${esc(s)}</span>`;
-const clsBadge = c => `<span class="cls cls-${esc(c)}">${esc(CLASS_LABEL[c] ?? c)}</span>`;
-const actBadge = a => `<span class="act act-${esc(a)}">${esc(a)}</span>`;
+const cap = s => String(s ?? '').charAt(0).toUpperCase() + String(s ?? '').slice(1);
+const sevBadge = s => `<span class="sev sev-${esc(s)}"><i aria-hidden="true"></i>${esc(cap(s))}</span>`;
+const sevSwatch = s => `<i style="background:${SEV_COLOR[s] ?? 'var(--sev-info)'}" aria-hidden="true"></i>`;
+const clsTag = c => `<span class="tag ${c === 'llm_agent' ? 'tag-agent' : c === 'human' ? 'tag-human' : ''}">${esc(CLASS_LABEL[c] ?? c)}</span>`;
+const blockedTag = () => '<span class="tag tag-blocked">Blocked</span>';
+const actLabel = a => `<span class="act act-${esc(a)}">${esc(ACTION_LABEL[a] ?? a)}</span>`;
+const empty = (title, body = '') => `<div class="empty"><strong>${esc(title)}</strong>${esc(body)}</div>`;
 
 function ago(ts) {
   const s = Math.max(0, Math.round((Date.now() - Number(ts)) / 1000));
@@ -48,21 +57,25 @@ function ago(ts) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
+const when = ts => new Date(Number(ts)).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 function scoreColor(n) {
   return n >= 80 ? 'var(--sev-critical)' : n >= 55 ? 'var(--sev-high)' : n >= 30 ? 'var(--sev-medium)' : 'var(--sev-low)';
 }
-const scoreCell = n => `<span class="score-wrap"><span class="score" style="color:${scoreColor(n)}">${Math.round(n)}</span><span class="score-meter"><i style="width:${Math.min(100, n)}%;background:${scoreColor(n)}"></i></span></span>`;
+const riskCell = n => `<span class="risk"><b style="color:${scoreColor(n)}">${Math.round(n)}</b><span class="risk-bar"><i style="width:${Math.min(100, n)}%;background:${scoreColor(n)}"></i></span></span>`;
 
 function describe(e) {
   const d = e.detail || {};
   if (e.signal === 'agent_instruction_followed') return d.selfReportedClient ? `says it is “${d.selfReportedClient}”` : 'followed the registration instruction';
-  if (e.signal === 'honeytoken_replay') return `${d.kind} planted in ${d.plantedIn}${d.sameVisitor ? '' : ' · reused by a different identity'}`;
+  if (e.signal === 'honeytoken_replay') return `${d.kind} planted in ${d.plantedIn}${d.sameVisitor ? '' : ', reused by a different identity'}`;
   if (e.signal === 'attack_payload') return `${d.category}: ${d.sample ?? ''}`;
   if (e.signal === 'decoy_login_attempt') return `username “${d.username}”`;
   if (d.decoyName) return d.decoyName;
   if (d.tool || d.library || d.engine) return d.tool || d.library || d.engine;
   return `${e.method} ${e.path}`;
 }
+
+// Put the Carbon icons into the static shell.
+document.querySelectorAll('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
 
 // ---------------- state & API ----------------
 const store = {
@@ -73,6 +86,7 @@ let TOKEN = store.token;
 let hours = 24;
 let es = null;
 let liveHandlers = [];
+let cleanups = [];
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json', ...(opts.headers || {}) } });
@@ -97,8 +111,9 @@ $('#login-form').addEventListener('submit', async e => {
     const r = await fetch('/api/overview?hours=1', { headers: { authorization: `Bearer ${TOKEN}` } });
     if (!r.ok) throw new Error();
     store.token = TOKEN;
+    $('#login-error').textContent = '';
     boot();
-  } catch { $('#login-error').textContent = 'That token was not accepted.'; }
+  } catch { $('#login-error').textContent = 'That token wasn’t accepted. Check admin.token in your config.'; }
 });
 $('#logout').addEventListener('click', logout);
 function logout() {
@@ -111,93 +126,116 @@ function logout() {
 }
 
 // ---------------- live stream ----------------
+function setLive(on) {
+  $('#live').classList.toggle('on', on);
+  $('#live-text').textContent = on ? 'Live' : 'Reconnecting';
+}
 function connectStream() {
   es?.close();
   es = new EventSource(`/api/stream?token=${encodeURIComponent(TOKEN)}`);
-  es.addEventListener('open', () => $('#live').classList.add('on'));
-  es.addEventListener('error', () => $('#live').classList.remove('on'));
+  es.addEventListener('open', () => setLive(true));
+  es.addEventListener('error', () => setLive(false));
   es.addEventListener('signal', m => { const e = JSON.parse(m.data); liveHandlers.forEach(h => h(e)); });
 }
 
 // ---------------- router ----------------
 const ROUTES = {
-  overview: { title: 'Overview', eyebrow: 'Live threat picture', sub: 'What tried to break in, and what got caught', render: renderOverview },
-  actors: { title: 'Attackers', eyebrow: 'Ranked by risk', sub: 'Every visitor that tripped something, ranked by risk', render: renderActors },
-  events: { title: 'Event log', eyebrow: 'Every signal', sub: 'Every signal EasyPot recorded', render: renderEvents },
-  decoys: { title: 'Decoys', eyebrow: 'Traps deployed', sub: 'Traps deployed on your site and how often they were triggered', render: renderDecoys },
-  blocks: { title: 'Blocklist', eyebrow: 'Firewall feed', sub: 'IPs and visitors currently blocked; published to your firewalls', render: renderBlocks },
-  integrations: { title: 'Integrations', eyebrow: 'Wazuh · SIEM · Firewalls', sub: 'Feed EasyPot into Wazuh, your SIEM and your firewalls', render: renderIntegrations },
+  overview: { title: 'Overview', sub: 'What tried to break in, and what got caught.', render: renderOverview },
+  actors: { title: 'Attackers', sub: 'Every visitor that tripped something, ranked by risk.', render: renderActors },
+  events: { title: 'Event log', sub: 'Every signal EasyPot recorded, newest first.', render: renderEvents },
+  decoys: { title: 'Decoys', sub: 'The traps deployed on your site and how often each was triggered.', render: renderDecoys },
+  blocks: { title: 'Blocklist', sub: 'IPs and visitors that are blocked right now. Your firewalls read this list.', render: renderBlocks },
+  integrations: { title: 'Integrations', sub: 'Send EasyPot’s findings to Wazuh, your SIEM and your firewalls.', render: renderIntegrations },
 };
 
 async function route() {
   const name = (location.hash.replace('#/', '') || 'overview').split('/')[0];
   const r = ROUTES[name] ?? ROUTES.overview;
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.dataset.route === name));
+  document.querySelectorAll('.nav a').forEach(a => {
+    const on = a.dataset.route === name;
+    a.classList.toggle('active', on);
+    on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
+  });
   $('#page-title').textContent = r.title;
-  $('#page-eyebrow').textContent = r.eyebrow;
-  $('#crumb').textContent = r.title;
   $('#page-sub').textContent = r.sub;
-  $('#range').parentElement.querySelector('select').style.visibility = name === 'overview' ? 'visible' : 'hidden';
+  document.title = `${r.title} · EasyPot`;
+  $('#range').hidden = name !== 'overview';
   liveHandlers = [];
-  $('#view').innerHTML = '<div class="empty">Loading…</div>';
-  try { await r.render($('#view')); } catch (err) { if (err.message !== 'unauthorized') $('#view').innerHTML = `<div class="card empty">Couldn't load this view (${esc(err.message)}).</div>`; }
+  cleanups.forEach(f => f()); cleanups = [];
+  $('#view').innerHTML = '<div class="loading">Loading…</div>';
+  try { await r.render($('#view')); } catch (err) {
+    if (err.message !== 'unauthorized') $('#view').innerHTML = `<div class="panel">${empty('This view didn’t load', `The server answered ${err.message}. Refresh to try again.`)}</div>`;
+  }
 }
 window.addEventListener('hashchange', route);
-$('#range').addEventListener('change', e => { hours = Number(e.target.value); route(); });
+$('#range').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  hours = Number(b.dataset.hours);
+  $('#range').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  route();
+});
 
 // ---------------- overview ----------------
 async function renderOverview(view) {
   const o = await api(`/api/overview?hours=${hours}`);
   $('#site-name').textContent = o.site;
-  $('#upstream').textContent = o.upstream;
+  $('#upstream').textContent = String(o.upstream).replace(/^https?:\/\//, '');
   const k = o.kpis;
-  const span = hours === 24 ? '24h' : hours === 168 ? '7 days' : '30 days';
+  const span = hours === 24 ? 'the last 24 hours' : hours === 168 ? 'the last 7 days' : 'the last 30 days';
+  const caught = k.agents || o.selfReports.length;
+
+  const catchHtml = o.selfReports.length ? `
+      <div>
+        <h2 class="catch-title"><span class="count">${fmt(caught)}</span>${caught === 1 ? 'AI agent told us who it is' : 'AI agents told us who they are'}</h2>
+        <p class="catch-sub">They followed instructions hidden in your pages and reported their model and task. That report is conclusive, so each one was blocked on the spot.</p>
+      </div>
+      <ol class="quotes">${o.selfReports.slice(0, 4).map(s => `
+        <li class="quote" data-actor="${esc(s.id)}" tabindex="0">
+          <q>${esc(s.self_report)}</q>
+          <div class="quote-meta"><span class="mono">${esc(s.ip)}</span><span>${ago(s.last_seen)}</span></div>
+        </li>`).join('')}
+      </ol>` : `
+      <div>
+        <h2 class="catch-title"><span class="count">0</span>AI agents have identified themselves</h2>
+      </div>
+      <p class="catch-empty">Every page EasyPot serves carries instructions only an automated agent will read. When an agent follows them, it usually reports its model and the task it was given, and that report shows up here.</p>`;
 
   view.innerHTML = `
-    <div class="grid kpis">
-      ${kpi('Requests', k.requests, `analysed · ${span}`, '', 'requests')}
-      ${kpi('Visitors', k.visitors, 'distinct identities', '', 'visitors')}
-      ${kpi('Threats', k.threats, 'medium severity and up', '', 'threats')}
-      ${kpi('AI agents caught', k.agents, 'followed planted instructions', 'accent', 'agents')}
-      ${kpi('Credential replays', k.replays, 'stolen decoy secrets used', k.replays ? 'danger' : '', 'replays')}
-      ${kpi('Active blocks', k.activeBlocks, 'IPs on the firewall feed', '', 'blocks')}
-    </div>
-    <div class="grid cols-3">
-      <section class="card">
-        <div class="card-h"><h2>Threat activity</h2><div class="legend">${SEVS.slice(0, 4).map(s => `<span><i style="background:${SEV_COLOR[s]}"></i>${s}</span>`).join('')}</div></div>
-        ${timelineSvg(o)}
+    <section class="catch" aria-label="AI agents caught">${catchHtml}</section>
+    <section class="stats" aria-label="Totals for ${span}">
+      ${stat('Requests', k.requests, `in ${span}`)}
+      ${stat('Visitors', k.visitors, 'distinct identities')}
+      ${stat('Threats', k.threats, 'medium severity or higher')}
+      ${stat('Credential replays', k.replays, 'stolen decoy secrets used', k.replays ? 'alarm' : '')}
+      ${stat('Active blocks', k.activeBlocks, 'IPs on the firewall feed')}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Threat activity</h2><div class="legend">${SEVS.slice(0, 4).map(s => `<span><i style="background:${SEV_COLOR[s]}"></i>${cap(s)}</span>`).join('')}</div></div>
+      <div class="panel-body"><div class="chart-box" id="chart" role="img" aria-label="Threat events over ${span}, stacked by severity"></div></div>
+    </section>
+    <div class="split">
+      <section class="panel">
+        <div class="panel-head"><h2>What they tried</h2><span class="muted">MITRE ATT&amp;CK technique</span></div>
+        ${rankList(o.bySignal.filter(s => !NOISE.has(s.signal)).slice(0, 10).map(s => ({ name: label(s.signal), n: s.n, tag: s.mitre })), 'Nothing suspicious yet', 'Signals appear here once a visitor trips a decoy or sends an attack payload.')}
       </section>
-      <section class="card">
-        <div class="card-h"><h2>Agents that identified themselves</h2><span class="muted">via planted instructions</span></div>
-        ${o.selfReports.length ? o.selfReports.map(s => `
-          <div class="confession" data-actor="${esc(s.id)}">
-            <q>${esc(s.self_report)}</q>
-            <div class="meta mono">${esc(s.ip)} · ${ago(s.last_seen)}</div>
-          </div>`).join('') : `<div class="empty">No AI agent has followed the planted instructions yet.<br>When one does, it usually tells you what model it is and what it was asked to do.</div>`}
-      </section>
-    </div>
-    <div class="grid cols-2">
-      <section class="card">
-        <div class="card-h"><h2>What they tried</h2><span class="muted">signals · ${span}</span></div>
-        ${barList(o.bySignal.filter(s => !NOISE.has(s.signal)).slice(0, 10).map(s => ({ name: label(s.signal), n: s.n, tag: s.mitre })))}
-      </section>
-      <section class="card">
-        <div class="card-h"><h2>Who's knocking</h2><span class="muted">visitor classes</span></div>
-        ${barList(o.byClass.filter(c => c.cls !== 'unknown').sort((a, b) => b.n - a.n).map(c => ({ name: CLASS_LABEL[c.cls] ?? c.cls, n: c.n })))}
-        ${o.payloads.length ? `<div class="card-h" style="margin-top:26px"><h2>Attack payloads</h2></div>${barList(o.payloads.map(p => ({ name: String(p.category).replace(/_/g, ' '), n: p.n })))}` : ''}
+      <section class="panel">
+        <div class="panel-head"><h2>Who’s knocking</h2><span class="muted">Visitors by type</span></div>
+        ${rankList(o.byClass.filter(c => c.cls !== 'unknown').sort((a, b) => b.n - a.n).map(c => ({ name: CLASS_LABEL[c.cls] ?? c.cls, n: c.n })), 'No visitors yet', '')}
+        ${o.payloads.length ? `<h3 class="sub-head">Attack payloads</h3>${rankList(o.payloads.map(p => ({ name: PAYLOAD_LABEL[p.category] ?? cap(String(p.category).replace(/_/g, ' ')), n: p.n })))}` : ''}
       </section>
     </div>
-    <div class="grid cols-3">
-      <section class="card">
-        <div class="card-h"><h2>Highest-risk visitors</h2><a class="muted small" href="#/actors">View all →</a></div>
+    <div class="split-wide">
+      <section class="panel">
+        <div class="panel-head"><h2>Highest-risk visitors</h2><a href="#/actors">See all attackers</a></div>
         ${actorTable(o.topActors)}
       </section>
-      <section class="card">
-        <div class="card-h"><h2>Live feed</h2><span class="muted">newest first</span></div>
-        <div class="feed" id="feed">${o.recent.length ? o.recent.map(e => feedItem(e)).join('') : '<div class="empty">Waiting for traffic…</div>'}</div>
+      <section class="panel">
+        <div class="panel-head"><h2>Live feed</h2><span class="muted">Newest first</span></div>
+        <div class="feed" id="feed">${o.recent.length ? o.recent.map(e => feedItem(e)).join('') : empty('Waiting for traffic', 'Events stream in here as they happen.')}</div>
       </section>
     </div>`;
 
+  mountChart($('#chart', view), o);
   bindActorClicks(view);
   liveHandlers.push(e => {
     const feed = $('#feed', view);
@@ -209,74 +247,85 @@ async function renderOverview(view) {
   });
 }
 
-const KPI_ICON = {
-  requests: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
-  visitors: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18.2 14.8c1.9.8 3 2.5 3.3 5.2"/>',
-  threats: '<path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17h.01"/>',
-  agents: '<rect x="6" y="6" width="12" height="12" rx="2.5"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9.5 2.5V6M14.5 2.5V6M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5"/>',
-  replays: '<circle cx="8" cy="15.5" r="4.2"/><path d="m11 12.5 9.5-9.5M17.5 6l3 3M14.5 9l2.2 2.2"/>',
-  blocks: '<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>',
-};
-function kpi(name, value, hint, cls = '', icon = '') {
-  return `<div class="card kpi ${cls}"><div class="k-top"><span class="k-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${KPI_ICON[icon] ?? ''}</svg></span><div class="k-label">${esc(name)}</div></div><div class="k-value">${fmt(value)}</div><div class="k-hint">${esc(hint)}</div></div>`;
+function stat(name, value, note, cls = '') {
+  return `<div class="stat ${cls}"><div class="stat-label">${esc(name)}</div><div class="stat-value">${fmt(value)}</div><div class="stat-note">${esc(note)}</div></div>`;
 }
 
-function barList(rows) {
-  if (!rows.length) return '<div class="empty">Nothing yet.</div>';
+function rankList(rows, emptyTitle = 'Nothing yet', emptyBody = '') {
+  if (!rows.length) return empty(emptyTitle, emptyBody);
   const max = Math.max(...rows.map(r => Number(r.n)), 1);
-  return `<div class="bars">${rows.map(r => `
-    <div class="bar-row"><span>${esc(r.name)}${r.tag ? `<span class="tag">${esc(r.tag)}</span>` : ''}</span><span class="n">${fmt(r.n)}</span>
-    <div class="track"><div class="fill" style="width:${(Number(r.n) / max) * 100}%;${r.color ? `background:${r.color}` : ''}"></div></div></div>`).join('')}</div>`;
+  return `<ol class="ranks">${rows.map(r => `
+    <li class="rank"><span class="rank-name">${esc(r.name)}</span><span class="rank-tag">${esc(r.tag ?? '')}</span><span class="rank-n">${fmt(r.n)}</span>
+      <span class="rank-bar" aria-hidden="true"><i style="width:${Math.max(2, (Number(r.n) / max) * 100)}%"></i></span></li>`).join('')}</ol>`;
 }
 
-function timelineSvg(o) {
+// Draws at the container's real pixel size so text stays crisp; redraws on resize.
+function mountChart(box, o) {
   const bucket = o.bucketMs;
   const end = Math.floor(Date.now() / bucket) * bucket;
   const n = o.hours <= 24 ? 24 : Math.round(o.hours / 24);
   const buckets = Array.from({ length: n }, (_, i) => end - (n - 1 - i) * bucket);
   const data = new Map(buckets.map(b => [b, { critical: 0, high: 0, medium: 0, low: 0 }]));
   for (const r of o.timeline) { const d = data.get(Number(r.bucket)); if (d && d[r.severity] !== undefined) d[r.severity] += Number(r.n); }
-  const W = 720, H = 220, L = 34, B = 22, T = 8;
-  const max = Math.max(4, ...[...data.values()].map(d => d.critical + d.high + d.medium + d.low));
-  const bw = (W - L) / n;
-  const y = v => H - B - (v / max) * (H - B - T);
-  let bars = '';
-  buckets.forEach((b, i) => {
-    let acc = 0;
-    for (const s of ['low', 'medium', 'high', 'critical']) {
-      const v = data.get(b)[s];
-      if (!v) continue;
-      const y0 = y(acc), y1 = y(acc + v);
-      bars += `<rect x="${L + i * bw + bw * .18}" y="${y1}" width="${bw * .64}" height="${Math.max(1, y0 - y1)}" rx="2" fill="${SEV_COLOR[s]}"><title>${new Date(b).toLocaleString()} · ${v} ${s}</title></rect>`;
-      acc += v;
-    }
-  });
-  const ticks = [0, .5, 1].map(f => Math.round(max * f));
-  const grid = ticks.map(t => `<line class="axis" x1="${L}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke-dasharray="${t ? '3 4' : ''}"/><text x="${L - 8}" y="${y(t) + 3}" text-anchor="end">${t}</text>`).join('');
-  const step = Math.ceil(n / 6);
-  const xl = buckets.map((b, i) => i % step === 0 ? `<text x="${L + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${o.hours <= 24 ? new Date(b).getHours().toString().padStart(2, '0') + ':00' : new Date(b).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</text>` : '').join('');
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Threat events over time">${grid}${bars}${xl}</svg>`;
+  const totals = [...data.values()].map(d => d.critical + d.high + d.medium + d.low);
+  const raw = Math.max(4, ...totals);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const stepY = raw / mag > 5 ? mag * 2 : raw / mag > 2 ? mag : mag / 2;
+  const max = Math.ceil(raw / stepY) * stepY;
+
+  const draw = () => {
+    const W = box.clientWidth, H = box.clientHeight;
+    if (!W || !H) return;
+    const L = 36, B = 24, T = 6, R = 4;
+    const bw = (W - L - R) / n;
+    const y = v => H - B - (v / max) * (H - B - T);
+    let grid = '';
+    for (let t = 0; t <= max + 1e-9; t += stepY) grid += `<line class="grid-line" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"${t ? ' stroke-dasharray="2 4"' : ''}/><text x="${L - 10}" y="${y(t) + 4}" text-anchor="end">${+t.toFixed(2)}</text>`;
+    let bars = '';
+    const barW = Math.min(28, Math.max(3, bw * .62));
+    buckets.forEach((b, i) => {
+      let acc = 0;
+      const x = L + i * bw + (bw - barW) / 2;
+      for (const s of ['low', 'medium', 'high', 'critical']) {
+        const v = data.get(b)[s];
+        if (!v) continue;
+        const y0 = y(acc), y1 = y(acc + v);
+        bars += `<rect x="${x}" y="${y1}" width="${barW}" height="${Math.max(1, y0 - y1 - 1)}" rx="1.5" fill="${SEV_COLOR[s]}"><title>${new Date(b).toLocaleString()}: ${v} ${s}</title></rect>`;
+        acc += v;
+      }
+    });
+    const every = Math.ceil(n / Math.max(2, Math.floor((W - L) / 70)));
+    const xl = buckets.map((b, i) => i % every === 0 ? `<text x="${L + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${o.hours <= 24 ? new Date(b).getHours().toString().padStart(2, '0') + ':00' : new Date(b).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</text>` : '').join('');
+    box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${grid}${bars}${xl}</svg>`;
+  };
+  draw();
+  const ro = new ResizeObserver(draw);
+  ro.observe(box);
+  cleanups.push(() => ro.disconnect());
 }
 
 function feedItem(e, isNew = false) {
-  return `<div class="feed-item ${isNew ? 'new' : ''}" data-actor="${esc(e.actorId)}" style="cursor:pointer">
-    ${sevBadge(e.severity)}
-    <div style="min-width:0"><div class="what">${esc(label(e.signal))}</div><div class="meta"><span class="mono">${esc(e.ip)}</span> · ${esc(describe(e))}</div></div>
+  return `<div class="feed-item ${isNew ? 'new' : ''}" data-actor="${esc(e.actorId)}" tabindex="0">
+    ${sevSwatch(e.severity)}
+    <div style="min-width:0"><div class="what">${esc(label(e.signal))}</div><div class="meta"><span class="mono">${esc(e.ip)}</span><span>${esc(describe(e))}</span></div></div>
     <div class="when">${ago(e.ts)}</div></div>`;
 }
 
 function actorTable(rows) {
-  if (!rows.length) return '<div class="empty">No suspicious visitors yet.</div>';
-  return `<div class="table-wrap"><table><thead><tr><th>Visitor</th><th>Class</th><th>Risk</th><th>Signals</th><th>Last seen</th></tr></thead><tbody>
-    ${rows.map(a => `<tr class="clickable" data-actor="${esc(a.id)}">
-      <td><div class="mono">${esc(a.ip)}</div><div class="faint small trunc" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.ua || 'no user agent')}</div></td>
-      <td>${clsBadge(a.cls)}${a.blocked ? ' <span class="act act-block">blocked</span>' : ''}</td>
-      <td>${scoreCell(a.score)}</td><td>${fmt(a.signals)}</td><td class="muted">${ago(a.last_seen)}</td></tr>`).join('')}
+  if (!rows.length) return empty('No suspicious visitors yet', 'Visitors show up here once they trip a decoy or a detector.');
+  return `<div class="table-wrap"><table><thead><tr><th>Visitor</th><th>Type</th><th>Risk</th><th class="r">Signals</th><th class="r">Last seen</th></tr></thead><tbody>
+    ${rows.map(a => `<tr class="clickable" data-actor="${esc(a.id)}" tabindex="0">
+      <td><div class="mono">${esc(a.ip)}</div><div class="cell-sub">${esc(a.ua || 'No user agent')}</div></td>
+      <td><span class="tags">${clsTag(a.cls)}${a.blocked ? blockedTag() : ''}</span></td>
+      <td>${riskCell(a.score)}</td><td class="r num">${fmt(a.signals)}</td><td class="r nowrap muted">${ago(a.last_seen)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
 function bindActorClicks(root) {
-  root.querySelectorAll('[data-actor]').forEach(el => { el.onclick = () => openActor(el.dataset.actor); });
+  root.querySelectorAll('[data-actor]').forEach(el => {
+    el.onclick = () => openActor(el.dataset.actor);
+    el.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openActor(el.dataset.actor); } };
+  });
 }
 
 // ---------------- actors ----------------
@@ -287,9 +336,9 @@ async function renderActors(view) {
     $('#actors-body', view).innerHTML = actorTable(rows);
     bindActorClicks(view);
   };
-  view.innerHTML = `<div class="toolbar"><div class="seg" id="cls-seg">
+  view.innerHTML = `<div class="toolbar"><div class="seg" id="cls-seg" role="group" aria-label="Visitor type">
       ${[['', 'All'], ['llm_agent', 'AI agents'], ['scanner', 'Scanners'], ['bot', 'Bots'], ['crawler', 'Crawlers']].map(([v, t]) => `<button type="button" data-v="${v}" class="${v === cls ? 'on' : ''}">${t}</button>`).join('')}
-    </div></div><section class="card" id="actors-body"></section>`;
+    </div></div><section class="panel" id="actors-body"></section>`;
   $('#cls-seg', view).onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     cls = b.dataset.v;
@@ -299,36 +348,49 @@ async function renderActors(view) {
   await draw();
 }
 
+let lastFocus = null;
 async function openActor(id) {
   const d = await api(`/api/actors/${encodeURIComponent(id)}`);
   const a = d.actor;
   const drawer = $('#drawer');
+  if (drawer.hidden) lastFocus = document.activeElement;
   drawer.innerHTML = `
-    <div class="drawer-h"><div><div class="muted small">Visitor ${esc(a.id)}</div><h2 class="mono">${esc(a.ip)}</h2></div>
-      <button class="btn btn-ghost btn-sm" id="drawer-close" type="button">Close</button></div>
-    <div class="toolbar">${clsBadge(a.cls)} ${d.blocked ? '<span class="act act-block">blocked</span>' : ''}
-      <span>${scoreCell(a.score)}</span>
-      <span style="margin-left:auto"></span>
-      ${d.blocked ? `<button class="btn btn-sm" id="unblock" type="button">Unblock</button>` : `<button class="btn btn-danger btn-sm" id="block" type="button">Block visitor</button>`}
+    <div class="drawer-head">
+      <div><h2>${esc(a.ip)}</h2><div class="drawer-id">Visitor <span class="mono">${esc(a.id)}</span></div></div>
+      <button class="btn btn-quiet btn-icon" id="drawer-close" type="button" aria-label="Close">${icon('close')}</button>
     </div>
-    ${a.selfReport ? `<div class="confession"><div class="muted small" style="margin-bottom:4px">What the agent said about itself</div><q>${esc(a.selfReport)}</q></div>` : ''}
-    <dl class="kv">
-      <dt>User agent</dt><dd class="mono">${esc(a.ua || '—')}</dd>
-      <dt>First seen</dt><dd>${new Date(a.firstSeen).toLocaleString()}</dd>
-      <dt>Last seen</dt><dd>${new Date(a.lastSeen).toLocaleString()}</dd>
-      <dt>Requests</dt><dd>${fmt(a.requests)}</dd>
-      <dt>Labyrinth depth</dt><dd>${a.labyrinthDepth ? `${a.labyrinthDepth} pages deep` : '—'}</dd>
-      <dt>Decoy secrets taken</dt><dd>${d.honeytokens.length ? [...new Set(d.honeytokens.map(t => t.kind))].map(k => `<span class="chip">${esc(k)}</span>`).join(' ') : '—'}</dd>
-    </dl>
-    <div><h3 style="font-size:14px;margin:6px 0 12px">Timeline</h3>
-      <div class="timeline">${d.events.map(e => `
-        <div class="tl-item" style="color:${SEV_COLOR[e.severity]}">
-          <div class="tl-h">${sevBadge(e.severity)}<strong style="color:var(--text)">${esc(label(e.signal))}</strong><span class="faint small">${new Date(e.ts).toLocaleString()}</span>${actBadge(e.action)}</div>
+    <div class="drawer-section">
+      <div class="drawer-bar">
+        <span class="tags">${clsTag(a.cls)}${d.blocked ? blockedTag() : ''}</span>
+        ${riskCell(a.score)}
+        <span class="spacer"></span>
+        ${d.blocked ? `<button class="btn btn-sm" id="unblock" type="button">Unblock</button>` : `<button class="btn btn-danger btn-sm" id="block" type="button">Block visitor</button>`}
+      </div>
+      ${a.selfReport ? `<div class="said"><div class="said-label">What the agent said about itself</div><q>${esc(a.selfReport)}</q></div>` : ''}
+    </div>
+    <div class="drawer-section">
+      <dl class="kv">
+        <dt>User agent</dt><dd class="mono">${esc(a.ua || '—')}</dd>
+        <dt>First seen</dt><dd>${when(a.firstSeen)}</dd>
+        <dt>Last seen</dt><dd>${when(a.lastSeen)}</dd>
+        <dt>Requests</dt><dd class="num">${fmt(a.requests)}</dd>
+        <dt>Labyrinth depth</dt><dd>${a.labyrinthDepth ? plural(a.labyrinthDepth, 'page', 'pages') + ' deep' : '—'}</dd>
+        <dt>Decoy secrets taken</dt><dd>${d.honeytokens.length ? `<span class="tags">${[...new Set(d.honeytokens.map(t => t.kind))].map(k => `<span class="tag">${esc(k)}</span>`).join('')}</span>` : '—'}</dd>
+      </dl>
+    </div>
+    <div class="drawer-section">
+      <h3>Timeline</h3>
+      ${d.events.length ? `<ol class="timeline">${d.events.map(e => `
+        <li class="tl-item">${sevSwatch(e.severity)}
+          <div class="tl-h"><strong>${esc(label(e.signal))}</strong>${sevBadge(e.severity)}</div>
+          <div class="tl-meta"><span>${when(e.ts)}</span>${actLabel(e.action)}</div>
           <pre>${esc(e.method)} ${esc(e.path)}${Object.keys(e.detail || {}).length ? '\n' + esc(JSON.stringify(e.detail, null, 2)) : ''}</pre>
-        </div>`).join('') || '<div class="empty">No events.</div>'}</div></div>`;
+        </li>`).join('')}</ol>` : empty('No events recorded')}
+    </div>`;
   drawer.hidden = false;
   $('#drawer-backdrop').hidden = false;
   $('#drawer-close').onclick = closeDrawer;
+  $('#drawer-close').focus();
   $('#block')?.addEventListener('click', async () => {
     await api('/api/blocks', { method: 'POST', body: JSON.stringify({ target: a.ip, reason: 'manual (dashboard)' }) });
     await api('/api/blocks', { method: 'POST', body: JSON.stringify({ target: a.id, reason: 'manual (dashboard)' }) });
@@ -340,7 +402,11 @@ async function openActor(id) {
     toast(`Unblocked ${a.ip}`); openActor(id);
   });
 }
-function closeDrawer() { $('#drawer').hidden = true; $('#drawer-backdrop').hidden = true; }
+function closeDrawer() {
+  if ($('#drawer').hidden) return;
+  $('#drawer').hidden = true; $('#drawer-backdrop').hidden = true;
+  lastFocus?.focus?.();
+}
 $('#drawer-backdrop').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
 
@@ -349,13 +415,13 @@ async function renderEvents(view) {
   let sev = 'critical,high,medium';
   const draw = async () => {
     const rows = await api(`/api/events?limit=300${sev ? `&severity=${sev}` : ''}`);
-    $('#ev-body', view).innerHTML = rows.length ? rows.map(evRow).join('') : `<tr><td colspan="6" class="empty">No events.</td></tr>`;
+    $('#ev-body', view).innerHTML = rows.length ? rows.map(evRow).join('') : `<tr><td colspan="6">${empty('No events at this severity', 'Try a wider filter.')}</td></tr>`;
     bindActorClicks(view);
   };
-  view.innerHTML = `<div class="toolbar"><div class="seg" id="sev-seg">
-      ${[['critical,high,medium', 'Medium +'], ['critical,high', 'High +'], ['critical', 'Critical'], ['', 'Everything']].map(([v, t]) => `<button type="button" data-v="${v}" class="${v === sev ? 'on' : ''}">${t}</button>`).join('')}
+  view.innerHTML = `<div class="toolbar"><div class="seg" id="sev-seg" role="group" aria-label="Minimum severity">
+      ${[['critical,high,medium', 'Medium and up'], ['critical,high', 'High and up'], ['critical', 'Critical'], ['', 'Everything']].map(([v, t]) => `<button type="button" data-v="${v}" class="${v === sev ? 'on' : ''}">${t}</button>`).join('')}
     </div></div>
-    <section class="card"><div class="table-wrap"><table><thead><tr><th>Severity</th><th>Signal</th><th>Source</th><th>Request</th><th>Action</th><th>When</th></tr></thead><tbody id="ev-body"></tbody></table></div></section>`;
+    <section class="panel"><div class="table-wrap"><table><thead><tr><th>Severity</th><th>Signal</th><th>Source</th><th>Request</th><th>Response</th><th class="r">When</th></tr></thead><tbody id="ev-body"></tbody></table></div></section>`;
   $('#sev-seg', view).onclick = e => {
     const b = e.target.closest('button'); if (!b) return;
     sev = b.dataset.v;
@@ -366,59 +432,71 @@ async function renderEvents(view) {
   liveHandlers.push(e => {
     if (sev && !sev.split(',').includes(e.severity)) return;
     const body = $('#ev-body', view);
-    body?.querySelector('.empty')?.parentElement.remove();
+    body?.querySelector('.empty')?.closest('tr')?.remove();
     body?.insertAdjacentHTML('afterbegin', evRow(e));
     bindActorClicks(view);
   });
 }
 function evRow(e) {
-  return `<tr class="clickable" data-actor="${esc(e.actorId)}"><td>${sevBadge(e.severity)}</td>
-    <td><div>${esc(label(e.signal))}</div><div class="faint small">${esc(describe(e))}</div></td>
-    <td><div class="mono">${esc(e.ip)}</div>${clsBadge(e.actorClass)}</td>
-    <td class="trunc mono">${esc(e.method)} ${esc(e.path)}</td><td>${actBadge(e.action)}</td><td class="muted">${ago(e.ts)}</td></tr>`;
+  return `<tr class="clickable" data-actor="${esc(e.actorId)}" tabindex="0"><td>${sevBadge(e.severity)}</td>
+    <td><div>${esc(label(e.signal))}</div><div class="cell-sub">${esc(describe(e))}</div></td>
+    <td class="nowrap"><div class="mono">${esc(e.ip)}</div><div class="cell-sub">${esc(CLASS_LABEL[e.actorClass] ?? e.actorClass)}</div></td>
+    <td class="cell-trunc mono">${esc(e.method)} ${esc(e.path)}</td><td class="nowrap">${actLabel(e.action)}</td><td class="r nowrap muted">${ago(e.ts)}</td></tr>`;
 }
 
 // ---------------- decoys ----------------
 async function renderDecoys(view) {
   const ds = await api('/api/decoys');
   const cats = [...new Set(ds.map(d => d.category))];
-  view.innerHTML = cats.map(c => `
-    <h2 class="section-label"><span class="eyebrow"><span class="logo logo-xs" aria-hidden="true"></span>${esc(c === 'cve' ? 'CVE exploit traps' : c)}</span></h2>
-    <div class="decoy-grid">${ds.filter(d => d.category === c).sort((a, b) => b.hits - a.hits).map(d => `
-      <div class="decoy ${d.hits ? 'hot' : ''}">
-        <div class="decoy-h"><strong>${esc(d.name)}</strong><span class="hits">${fmt(d.hits)}</span></div>
-        <div class="muted small">${d.lastHit ? `last triggered ${ago(d.lastHit)}` : 'not triggered yet'} · weight ${d.weight}</div>
-        ${d.paths.length ? `<div class="chips">${d.paths.slice(0, 6).map(p => `<span class="chip">${esc(p)}</span>`).join('')}${d.paths.length > 6 ? `<span class="chip">+${d.paths.length - 6}</span>` : ''}</div>` : ''}
-      </div>`).join('')}</div>`).join('');
+  if (!ds.length) { view.innerHTML = `<div class="panel">${empty('No decoys deployed', 'Check the decoys section of your config.')}</div>`; return; }
+  view.innerHTML = cats.map(c => {
+    const list = ds.filter(d => d.category === c).sort((a, b) => b.hits - a.hits);
+    const hot = list.filter(d => d.hits).length;
+    return `<section class="panel">
+      <div class="panel-head"><h2>${esc(CATEGORY_LABEL[c] ?? cap(c))}</h2><span class="counts">${plural(list.length, 'trap', 'traps')}, ${fmt(hot)} triggered</span></div>
+      <div class="table-wrap"><table class="decoy-table"><colgroup><col class="c-name"><col><col class="c-weight"><col class="c-last"><col class="c-hits"></colgroup><thead><tr><th>Decoy</th><th>Paths</th><th class="r">Weight</th><th class="r">Last triggered</th><th class="r">Hits</th></tr></thead><tbody>
+      ${list.map(d => `<tr>
+        <td class="decoy-name">${esc(d.name)}</td>
+        <td>${d.paths.length ? `<div class="paths">${d.paths.slice(0, 5).map(p => `<span class="path">${esc(p)}</span>`).join('')}${d.paths.length > 5 ? `<span class="dim">and ${d.paths.length - 5} more</span>` : ''}</div>` : '<span class="dim">Dynamic</span>'}</td>
+        <td class="r num muted">${d.weight}</td>
+        <td class="r nowrap ${d.lastHit ? '' : 'dim'}">${d.lastHit ? ago(d.lastHit) : 'Never'}</td>
+        <td class="r"><span class="hits ${d.hits ? 'hot' : ''}">${fmt(d.hits)}</span></td></tr>`).join('')}
+      </tbody></table></div></section>`;
+  }).join('');
 }
 
 // ---------------- blocks ----------------
 async function renderBlocks(view) {
   const draw = async () => {
     const bs = await api('/api/blocks');
+    $('#bl-count', view).textContent = plural(bs.length, 'entry', 'entries');
     $('#bl-body', view).innerHTML = bs.length ? bs.map(b => `<tr>
-      <td class="mono">${esc(b.target)}</td><td>${esc(b.kind)}</td><td>${esc(b.reason)}</td>
-      <td><span class="cls">${esc(b.source)}</span></td><td class="muted">${ago(b.created)}</td>
-      <td class="muted">${b.expires ? new Date(b.expires).toLocaleString() : 'never'}</td>
-      <td><button class="btn btn-sm" type="button" data-unblock="${esc(b.target)}">Remove</button></td></tr>`).join('')
-      : `<tr><td colspan="7" class="empty">Nothing is blocked.</td></tr>`;
+      <td class="mono">${esc(b.target)}</td><td>${b.kind === 'ip' ? 'IP address' : 'Visitor'}</td><td>${esc(b.reason)}</td>
+      <td><span class="tag">${esc(cap(b.source))}</span></td><td class="nowrap muted">${ago(b.created)}</td>
+      <td class="nowrap muted">${b.expires ? when(b.expires) : 'Never'}</td>
+      <td class="r"><button class="btn btn-sm" type="button" data-unblock="${esc(b.target)}">Unblock</button></td></tr>`).join('')
+      : `<tr><td colspan="7">${empty('Nothing is blocked', 'Visitors are blocked automatically when they cross the risk threshold, or you can add one above.')}</td></tr>`;
     view.querySelectorAll('[data-unblock]').forEach(btn => btn.onclick = async () => {
       await api(`/api/blocks/${encodeURIComponent(btn.dataset.unblock)}`, { method: 'DELETE' });
-      toast('Removed'); draw();
+      toast(`Unblocked ${btn.dataset.unblock}`); draw();
     });
   };
   view.innerHTML = `
-    <form class="card toolbar" id="bl-form">
-      <input id="bl-target" placeholder="IP address or visitor ID" required>
-      <input id="bl-reason" placeholder="Reason (optional)">
-      <select id="bl-ttl"><option value="60">1 hour</option><option value="1440" selected>24 hours</option><option value="10080">7 days</option><option value="0">Permanent</option></select>
-      <button class="btn btn-primary" type="submit">Add block</button>
-    </form>
-    <section class="card"><div class="table-wrap"><table><thead><tr><th>Target</th><th>Kind</th><th>Reason</th><th>Source</th><th>Added</th><th>Expires</th><th></th></tr></thead><tbody id="bl-body"></tbody></table></div></section>`;
+    <section class="panel">
+      <div class="panel-head"><h2>Blocked now</h2><span class="muted" id="bl-count"></span></div>
+      <form class="add-block" id="bl-form">
+        <input id="bl-target" placeholder="IP address or visitor ID" aria-label="IP address or visitor ID" required>
+        <input id="bl-reason" placeholder="Reason (optional)" aria-label="Reason">
+        <select id="bl-ttl" aria-label="Block for"><option value="60">For 1 hour</option><option value="1440" selected>For 24 hours</option><option value="10080">For 7 days</option><option value="0">Permanently</option></select>
+        <button class="btn btn-primary" type="submit">Block</button>
+      </form>
+      <div class="table-wrap"><table><thead><tr><th>Target</th><th>Kind</th><th>Reason</th><th>Added by</th><th>Added</th><th>Expires</th><th></th></tr></thead><tbody id="bl-body"></tbody></table></div>
+    </section>`;
   $('#bl-form', view).onsubmit = async e => {
     e.preventDefault();
-    await api('/api/blocks', { method: 'POST', body: JSON.stringify({ target: $('#bl-target').value.trim(), reason: $('#bl-reason').value.trim() || 'manual', ttlMinutes: Number($('#bl-ttl').value) }) });
-    e.target.reset(); toast('Blocked'); draw();
+    const target = $('#bl-target').value.trim();
+    await api('/api/blocks', { method: 'POST', body: JSON.stringify({ target, reason: $('#bl-reason').value.trim() || 'manual', ttlMinutes: Number($('#bl-ttl').value) }) });
+    e.target.reset(); toast(`Blocked ${target}`); draw();
   };
   await draw();
 }
@@ -429,48 +507,80 @@ async function renderIntegrations(view) {
   const base = location.origin;
   const feed = p => `${base}${p}?token=${c.feedToken}`;
   const i = c.integrations;
+  const state = (on, yes, no) => `<span class="state ${on ? 'on' : ''}"><i aria-hidden="true"></i>${on ? yes : no}</span>`;
   view.innerHTML = `
-    <section class="card"><div class="card-h"><h2>Firewall blocklist feeds</h2><span class="muted">pull-based · update every minute</span></div>
-      <p class="muted" style="margin-top:0">Point your firewall's external IP list at this URL. Palo Alto (External Dynamic List), FortiGate (Threat Feed), pfSense and OPNsense (URL Table) and Sophos all read it directly.</p>
-      ${copyRow(feed('/feeds/blocklist.txt'))}
-      <div class="grid cols-2" style="margin-top:12px">
-        <div><div class="label">JSON (with reasons)</div>${copyRow(feed('/feeds/blocklist.json'))}</div>
-        <div><div class="label">STIX 2.1 (MISP / OpenCTI)</div>${copyRow(feed('/feeds/stix.json'))}</div>
+    <section class="panel"><div class="panel-head"><h2>Firewall blocklist feed</h2><span class="muted">Your firewall pulls it, refreshed every minute</span></div>
+      <div class="panel-body">
+        <p class="prose">Point your firewall’s external IP list at this URL. Palo Alto (External Dynamic List), FortiGate (Threat Feed), pfSense and OPNsense (URL Table) and Sophos read it directly.</p>
+        ${copyField(feed('/feeds/blocklist.txt'), 'Plain text blocklist')}
+        <div class="field-grid">
+          <div><div class="field-label">JSON, with the reason for each block</div>${copyField(feed('/feeds/blocklist.json'), 'JSON blocklist')}</div>
+          <div><div class="field-label">STIX 2.1, for MISP and OpenCTI</div>${copyField(feed('/feeds/stix.json'), 'STIX bundle')}</div>
+        </div>
       </div>
     </section>
-    <div class="grid cols-2">
-      <section class="card"><div class="card-h"><h2>Wazuh</h2><span><span class="status-dot ${i.fileLog.enabled ? 'on' : ''}"></span>${i.fileLog.enabled ? 'Event log on' : 'Event log off'}</span></div>
-        <ol class="steps">
-          <li>On the Wazuh agent: add a <code>&lt;localfile&gt;</code> with <code>log_format json</code> reading <code>${esc(i.fileLog.path)}</code></li>
-          <li>On the manager: copy <code>integrations/wazuh/easypot_rules.xml</code> into <code>/var/ossec/etc/rules/</code></li>
-          <li>Enable <code>firewall-drop</code> active response for rules <code>100710–100713</code> so every agent blocks caught attackers</li>
-        </ol>
+    <div class="split">
+      <section class="panel"><div class="panel-head"><h2>Wazuh</h2>${state(i.fileLog.enabled, 'Event log on', 'Event log off')}</div>
+        <div class="panel-body"><ol class="steps">
+          <li>On the Wazuh agent, add a <code class="inline">&lt;localfile&gt;</code> with <code class="inline">log_format json</code> that reads <code class="inline">${esc(i.fileLog.path)}</code>.</li>
+          <li>On the manager, copy <code class="inline">integrations/wazuh/easypot_rules.xml</code> into <code class="inline">/var/ossec/etc/rules/</code>.</li>
+          <li>Turn on the <code class="inline">firewall-drop</code> active response for rules <code class="inline">100710</code> to <code class="inline">100713</code> so every agent blocks caught attackers.</li>
+        </ol></div>
       </section>
-      <section class="card"><div class="card-h"><h2>SIEM (syslog)</h2><span><span class="status-dot ${i.syslog.enabled ? 'on' : ''}"></span>${i.syslog.enabled ? 'Sending' : 'Off'}</span></div>
-        ${i.syslog.enabled ? `<p class="mono">${esc(i.syslog.protocol)}://${esc(i.syslog.host)}:${esc(i.syslog.port)} · ${esc(i.syslog.format.toUpperCase())} · ≥ ${esc(i.syslog.minSeverity)}</p>`
-          : `<p class="muted" style="margin-top:0">Set <code>integrations.syslog</code> in the config to stream JSON or CEF to Splunk, Elastic, Sentinel or QRadar. Every event carries a MITRE ATT&CK technique ID.</p>`}
+      <section class="panel"><div class="panel-head"><h2>SIEM over syslog</h2>${state(i.syslog.enabled, 'Sending', 'Not set up')}</div>
+        <div class="panel-body">${i.syslog.enabled
+          ? `<dl class="kv"><dt>Destination</dt><dd class="mono">${esc(i.syslog.protocol)}://${esc(i.syslog.host)}:${esc(i.syslog.port)}</dd><dt>Format</dt><dd>${esc(String(i.syslog.format).toUpperCase())}</dd><dt>Sends</dt><dd>${esc(cap(i.syslog.minSeverity))} severity and up</dd></dl>`
+          : `<p class="prose">Set <code class="inline">integrations.syslog</code> in your config to stream JSON or CEF to Splunk, Elastic, Sentinel or QRadar. Every event carries its MITRE ATT&amp;CK technique ID.</p>`}</div>
       </section>
     </div>
-    <div class="grid cols-2">
-      <section class="card"><div class="card-h"><h2>Alerts</h2><span class="muted">${i.webhooks.length} webhook(s)</span></div>
-        ${i.webhooks.length ? i.webhooks.map(w => `<p class="mono">${esc(w.type)} → ${esc(w.url)} · ≥ ${esc(w.minSeverity)}</p>`).join('')
-          : '<p class="muted" style="margin-top:0">Add a Slack or generic webhook under <code>integrations.webhooks</code>. Generic webhooks work with Shuffle, TheHive, Tines and XSOAR.</p>'}
+    <div class="split">
+      <section class="panel"><div class="panel-head"><h2>Alerts</h2>${state(i.webhooks.length, plural(i.webhooks.length, 'webhook', 'webhooks'), 'No webhooks')}</div>
+        <div class="panel-body">${i.webhooks.length
+          ? `<dl class="kv">${i.webhooks.map(w => `<dt>${esc(cap(w.type))}</dt><dd><span class="mono">${esc(w.url)}</span><div class="dim">${esc(cap(w.minSeverity))} severity and up</div></dd>`).join('')}</dl>`
+          : '<p class="prose">Add a Slack or generic webhook under <code class="inline">integrations.webhooks</code>. Generic webhooks work with Shuffle, TheHive, Tines and XSOAR.</p>'}</div>
       </section>
-      <section class="card"><div class="card-h"><h2>Detection policy</h2></div>
-        <dl class="kv">
-          <dt>Tarpit at</dt><dd>score ${c.thresholds.tarpit}</dd>
-          <dt>Labyrinth at</dt><dd>score ${c.thresholds.labyrinth}</dd>
-          <dt>Block at</dt><dd>score ${c.thresholds.block}${c.autoBlock ? ' · instant on conclusive signals' : ''}</dd>
-          <dt>Block length</dt><dd>${Math.round(c.blockTtlMinutes / 60)}h · responds ${esc(c.blockMode)}</dd>
-          <dt>Decoy stacks</dt><dd>${c.stack.map(s => `<span class="chip">${esc(s)}</span>`).join(' ')}</dd>
-        </dl>
+      <section class="panel"><div class="panel-head"><h2>Detection policy</h2></div>
+        <div class="panel-body"><dl class="kv">
+          <dt>Slow down at</dt><dd>Risk score ${c.thresholds.tarpit}</dd>
+          <dt>Send to labyrinth at</dt><dd>Risk score ${c.thresholds.labyrinth}</dd>
+          <dt>Block at</dt><dd>Risk score ${c.thresholds.block}${c.autoBlock ? '<div class="dim">Conclusive signals block immediately</div>' : ''}</dd>
+          <dt>Block length</dt><dd>${plural(Math.round(c.blockTtlMinutes / 60), 'hour', 'hours')}<div class="dim">Blocked visitors get a ${esc(c.blockMode)} response</div></dd>
+          <dt>Decoys tailored to</dt><dd><span class="tags">${c.stack.map(s => `<span class="tag">${esc(s)}</span>`).join('')}</span></dd>
+        </dl></div>
       </section>
     </div>`;
   view.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
-    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied'); } catch { toast('Copy failed. Select the text instead.'); }
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast('Copied to clipboard'); } catch { toast('Couldn’t copy. Select the text instead.'); }
   });
 }
-const copyRow = v => `<div class="copy-row"><code>${esc(v)}</code><button class="btn btn-sm" type="button" data-copy="${esc(v)}">Copy</button></div>`;
+const copyField = (v, name) => `<div class="field"><code>${esc(v)}</code><button class="btn btn-sm" type="button" data-copy="${esc(v)}" aria-label="Copy ${esc(name)} URL">${icon('copy')}Copy</button></div>`;
+
+// ---------------- sign-in art ----------------
+// Line-art terrain behind the sign-in form: two ribbed hills falling into a valley floor whose
+// perspective lines converge under the form. Decorative only.
+function drawTerrain() {
+  const W = 1440, H = 900, N = 54, cx = W / 2;
+  let hills = '';
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const edge = 90 + t * 640, dip = 760 + t * 110, spread = 300 + t * 160;
+    hills += `<path d="M-60 ${edge.toFixed(1)} C${spread.toFixed(1)} ${(edge + 40).toFixed(1)} ${(cx - 260).toFixed(1)} ${dip.toFixed(1)} ${cx} ${dip.toFixed(1)} S${(W - spread).toFixed(1)} ${(edge + 40).toFixed(1)} ${W + 60} ${edge.toFixed(1)}" stroke-opacity="${(0.18 + 0.5 * (1 - t)).toFixed(2)}"/>`;
+  }
+  let floor = '';
+  for (let i = -30; i <= 30; i++) floor += `<path d="M${cx + i * 2.2} 690 L${cx + i * 46} ${H + 10}"/>`;
+  $('#login-art').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" fill="none">
+    <defs>
+      <linearGradient id="ln" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".6"/><stop offset=".28" stop-color="#fff" stop-opacity=".08"/><stop offset=".5" stop-color="#fff" stop-opacity=".02"/><stop offset=".72" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity=".6"/></linearGradient>
+      <linearGradient id="fl" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".14"/></linearGradient>
+      <radialGradient id="vg" cx=".5" cy=".46" r=".55"><stop offset=".4" stop-color="#000" stop-opacity=".92"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+      <radialGradient id="glow" cx=".5" cy="1" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    </defs>
+    <rect width="${W}" height="${H}" fill="url(#glow)"/>
+    <g stroke="url(#fl)" stroke-width=".7">${floor}</g>
+    <g stroke="url(#ln)" stroke-width=".8">${hills}</g>
+    <rect width="${W}" height="${H}" fill="url(#vg)"/>
+  </svg>`;
+}
 
 // ---------------- boot ----------------
 function boot() {
@@ -480,30 +590,4 @@ function boot() {
   connectStream();
   route();
 }
-// Line-art terrain behind the sign-in screen: two ribbed hills that fall into a valley floor,
-// with a perspective floor converging on the logo's light beam. Decorative only.
-function drawTerrain() {
-  const W = 1440, H = 900, N = 54, cx = W / 2;
-  let hills = '';
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    const edge = 90 + t * 640;              // height at the left/right edges
-    const dip = 760 + t * 110;              // depth in the middle of the valley
-    const spread = 300 + t * 160;
-    hills += `<path d="M-60 ${edge.toFixed(1)} C${spread.toFixed(1)} ${(edge + 40).toFixed(1)} ${(cx - 260).toFixed(1)} ${dip.toFixed(1)} ${cx} ${dip.toFixed(1)} S${(W - spread).toFixed(1)} ${(edge + 40).toFixed(1)} ${W + 60} ${edge.toFixed(1)}" stroke-opacity="${(0.18 + 0.5 * (1 - t)).toFixed(2)}"/>`;
-  }
-  let floor = '';
-  for (let i = -30; i <= 30; i++) floor += `<path d="M${cx + i * 2.2} 690 L${cx + i * 46} ${H + 10}"/>`;
-  $('#login-art').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" fill="none">
-    <defs>
-      <linearGradient id="ln" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".3" stop-color="#fff" stop-opacity=".08"/><stop offset=".5" stop-color="#fff" stop-opacity=".02"/><stop offset=".7" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient>
-      <linearGradient id="fl" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".12"/></linearGradient>
-      <radialGradient id="vg" cx=".5" cy=".42" r=".6"><stop offset=".35" stop-color="#030303" stop-opacity=".9"/><stop offset="1" stop-color="#030303" stop-opacity="0"/></radialGradient>
-    </defs>
-    <g stroke="url(#fl)" stroke-width=".7">${floor}</g>
-    <g stroke="url(#ln)" stroke-width=".8">${hills}</g>
-    <rect width="${W}" height="${H}" fill="url(#vg)"/>
-  </svg>`;
-}
-
 if (TOKEN) boot(); else { drawTerrain(); $('#login').hidden = false; }
