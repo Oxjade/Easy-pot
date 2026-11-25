@@ -1,0 +1,23 @@
+services:
+  easypot:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "80:8080"            # public traffic → EasyPot → your app
+      - "127.0.0.1:8081:8081" # dashboard + feeds; keep private or put behind your VPN
+    environment:
+      EASYPOT_UPSTREAM: http://app:80
+      EASYPOT_ADMIN_TOKEN: ${EASYPOT_ADMIN_TOKEN:?set EASYPOT_ADMIN_TOKEN}
+      EASYPOT_FEED_TOKEN: ${EASYPOT_FEED_TOKEN:?set EASYPOT_FEED_TOKEN}
+      EASYPOT_SECRET: ${EASYPOT_SECRET:?set EASYPOT_SECRET}
+    volumes:
+      - ./easypot.config.json:/etc/easypot/easypot.config.json:ro
+      - easypot-data:/var/lib/easypot
+
+  # Replace with your real application.
+  app:
+    image: nginxdemos/hello
+    expose: ["80"]
+
+volumes:
+  easypot-data:

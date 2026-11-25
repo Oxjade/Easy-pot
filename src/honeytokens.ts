@@ -84,14 +84,17 @@ export class Honeytokens {
     }
 
     const found = new Map<string, TokenOwner>();
-    const re = /[A-Za-z0-9_\-.+/=!#:]{16,}/g;
+    const check = (cand: string) => { const o = this.byToken.get(cand); if (o) found.set(cand, o); };
+    const generic = /[A-Za-z0-9_\-.+/=!#:]{16,}/g;
+    // Prefixed formats get pulled out of any surrounding syntax, e.g.
+    // "AWS4-HMAC-SHA256 Credential=AKIA…/20261125/eu-west-1/s3/aws4_request".
+    const prefixed = /AKIA[A-Z2-7]{16}|sk_live_[A-Za-z0-9]{24}|ghp_[A-Za-z0-9]{36}|api_[0-9a-f]{32}|Adm1n-[A-Za-z0-9]{12}|eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
     for (const h of hay) {
-      for (const m of h.matchAll(re)) {
+      for (const m of h.matchAll(prefixed)) check(m[0]);
+      for (const m of h.matchAll(generic)) {
         // Tokens can sit inside larger strings (e.g. "key:secret"); check whole match and its parts.
-        for (const cand of [m[0], ...m[0].split(/[:=]/)]) {
-          const owner = this.byToken.get(cand);
-          if (owner) found.set(cand, owner);
-        }
+        check(m[0]);
+        for (const part of m[0].split(/[:=]/)) check(part);
       }
     }
     return [...found.values()].map(owner => ({

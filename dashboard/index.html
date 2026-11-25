@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EasyPot</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Login -->
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <div class="brand brand-lg"><span class="logo" aria-hidden="true"></span><span>EasyPot</span></div>
+      <p class="muted">Enter the admin token from your EasyPot config or startup log.</p>
+      <label for="token-input" class="label">Admin token</label>
+      <input id="token-input" type="password" autocomplete="current-password" required>
+      <button class="btn btn-primary" type="submit">Open dashboard</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="app" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span><span>EasyPot</span></div>
+      <nav class="nav" aria-label="Main">
+        <a href="#/overview" data-route="overview"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3zm0 8h8v-6H3zm10 0h8V11h-8zm0-18v6h8V3z"/></svg>Overview</a>
+        <a href="#/actors" data-route="actors"><svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-3.3 0-8 1.7-8 5v1h16v-1c0-3.3-4.7-5-8-5z"/></svg>Attackers</a>
+        <a href="#/events" data-route="events"><svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg>Event log</a>
+        <a href="#/decoys" data-route="decoys"><svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3L18.7 8 12 11.7 5.3 8zM5 9.7l6 3.3v6.6l-6-3.3zm8 9.9V13l6-3.3v6.6z"/></svg>Decoys</a>
+        <a href="#/blocks" data-route="blocks"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 2a8 8 0 0 1 6.3 12.9L7.1 5.7A8 8 0 0 1 12 4zm0 16a8 8 0 0 1-6.3-12.9l11.2 11.2A8 8 0 0 1 12 20z"/></svg>Blocklist</a>
+        <a href="#/integrations" data-route="integrations"><svg viewBox="0 0 24 24"><path d="M10 3H4v6h2V5h4zm10 0h-6v2h4v4h2zM6 15H4v6h6v-2H6zm14 0h-2v4h-4v2h6zM9 9h6v6H9z"/></svg>Integrations</a>
+      </nav>
+      <div class="side-foot">
+        <div class="protect"><span class="pulse" aria-hidden="true"></span><span>Protecting</span></div>
+        <div id="site-name" class="site-name">—</div>
+        <div id="upstream" class="mono muted small">—</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">Overview</h1>
+          <p id="page-sub" class="muted small"></p>
+        </div>
+        <div class="top-actions">
+          <span id="live" class="live" title="Live event stream"><span class="dot"></span>Live</span>
+          <select id="range" aria-label="Time range">
+            <option value="24">Last 24 hours</option>
+            <option value="168">Last 7 days</option>
+            <option value="720">Last 30 days</option>
+          </select>
+          <button id="logout" class="btn btn-ghost" type="button">Sign out</button>
+        </div>
+      </header>
+      <div id="view" class="view"></div>
+    </main>
+  </div>
+
+  <!-- Attacker drawer -->
+  <div id="drawer-backdrop" class="backdrop" hidden></div>
+  <aside id="drawer" class="drawer" hidden aria-label="Attacker details"></aside>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "listen": { "host": "0.0.0.0", "port": 8080 },
+  "upstream": "http://127.0.0.1:3000",
+  "preserveHost": true,
+  "trustProxy": false,
+  "siteName": "Acme",
+  "stack": ["generic", "wordpress", "php"],
+
+  "secret": "CHANGE-ME-long-random-string",
+  "dataDir": "/var/lib/easypot",
+
+  "admin": {
+    "host": "127.0.0.1",
+    "port": 8081,
+    "token": "CHANGE-ME-admin-token",
+    "feedToken": "CHANGE-ME-feed-token"
+  },
+
+  "decoys": {
+    "enabled": true,
+    "exclude": [],
+    "probeUpstream": true,
+    "cvePack": "./rules/cve-pack.json"
+  },
+
+  "tripwires": {
+    "enabled": true,
+    "canaryPrefix": "/.well-known/agent-registration",
+    "hiddenLinkPath": "/internal/ops/export",
+    "labyrinthPrefix": "/docs/archive"
+  },
+
+  "thresholds": { "tarpit": 30, "labyrinth": 55, "block": 80 },
+  "autoBlock": true,
+  "halfLifeMinutes": 30,
+  "blockTtlMinutes": 1440,
+  "blockMode": "403",
+  "tarpitMs": { "min": 1500, "max": 8000 },
+
+  "allowlist": { "ips": [], "cidrs": ["10.0.0.0/8"] },
+
+  "integrations": {
+    "fileLog": { "enabled": true, "path": "/var/lib/easypot/events.jsonl", "minSeverity": "low" },
+    "syslog": { "enabled": false, "host": "siem.internal", "port": 514, "protocol": "udp", "format": "json", "minSeverity": "low" },
+    "webhooks": [
+      { "url": "https://hooks.slack.com/services/XXX/YYY/ZZZ", "type": "slack", "minSeverity": "high" }
+    ]
+  }
+}

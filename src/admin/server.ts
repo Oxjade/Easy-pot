@@ -60,8 +60,9 @@ export function startAdmin(d: Deps): http.Server {
     const since = Date.now() - hours * 3_600_000;
     const db = store.db;
     const bucketMs = hours <= 24 ? 3_600_000 : 86_400_000;
-    const timeline = db.prepare(`SELECT (ts / ?) * ? AS bucket, severity, COUNT(*) AS n FROM events WHERE ts >= ? AND signal != 'blocked_request'
-      GROUP BY bucket, severity ORDER BY bucket`).all(bucketMs, bucketMs, since);
+    // bucketMs is a server-side constant; inlined so SQLite does integer (not float) division.
+    const timeline = db.prepare(`SELECT (ts / ${bucketMs}) * ${bucketMs} AS bucket, severity, COUNT(*) AS n FROM events
+      WHERE ts >= ? AND signal != 'blocked_request' GROUP BY bucket, severity ORDER BY bucket`).all(since);
     const bySignal = db.prepare(`SELECT signal, COUNT(*) AS n, COUNT(DISTINCT actor_id) AS actors FROM events WHERE ts >= ? GROUP BY signal ORDER BY n DESC`).all(since)
       .map(r => ({ ...r, mitre: MITRE[String(r.signal)]?.id ?? null }));
     const byClass = db.prepare(`SELECT cls, COUNT(*) AS n FROM actors WHERE last_seen >= ? GROUP BY cls`).all(since);
