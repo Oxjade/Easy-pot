@@ -64,7 +64,7 @@ Your app receives `X-EasyPot-Score` and `X-EasyPot-Class` on every request. You 
 
 ## Landing page
 
-`site/` is a static product page for EasyPot: plain HTML, CSS and a little JavaScript, with no build step or external requests. Preview it with any static server, for example `python3 -m http.server -d site 4321`, then open http://127.0.0.1:4321. It shares the dashboard's fonts and icons (IBM Carbon, Apache-2.0; Instrument Sans and IBM Plex Mono, OFL). `site/assets/dashboard.jpg` is a screenshot of the demo.
+`site/` is a static product page for EasyPot: plain HTML, CSS and a little JavaScript, with no build step or external requests. Preview it with any static server, for example `python3 -m http.server -d site 4321`, then open http://127.0.0.1:4321. It shares the dashboard's fonts and icons (IBM Carbon, Apache-2.0; Instrument Sans and IBM Plex Mono, OFL). `site/assets/dashboard.jpg` is a screenshot of the demo. When you deploy it, add a canonical link and make `og:image` an absolute URL on your domain (see the comment in `site/index.html`).
 
 ## Integrations
 
