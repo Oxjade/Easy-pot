@@ -1,0 +1,100 @@
+<!--
+  EasyPot rules for Wazuh.
+  Install on the Wazuh manager:  /var/ossec/etc/rules/easypot_rules.xml
+  then: systemctl restart wazuh-manager
+
+  EasyPot writes one JSON object per line (product=easypot) to its event log.
+  Wazuh's built-in JSON decoder parses it; `srcip` maps natively, so active
+  response (firewall-drop) works out of the box.
+  Rule IDs 100700-100799 — change them if they collide with your local rules.
+-->
+<group name="easypot,web,deception,">
+
+  <rule id="100700" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="product">^easypot$</field>
+    <description>EasyPot: event grouping</description>
+  </rule>
+
+  <!-- Specific, high-confidence detections first -->
+  <rule id="100710" level="13">
+    <if_sid>100700</if_sid>
+    <field name="signal">^agent_instruction_followed$</field>
+    <description>EasyPot: AI agent followed injected instructions from $(srcip) — self-reported client: $(detail.selfReportedClient)</description>
+    <mitre><id>T1595</id></mitre>
+    <group>ai_agent,attack,</group>
+  </rule>
+
+  <rule id="100711" level="14">
+    <if_sid>100700</if_sid>
+    <field name="signal">^honeytoken_replay$</field>
+    <description>EasyPot: stolen decoy credential ($(detail.kind)) used from $(srcip)</description>
+    <mitre><id>T1078</id></mitre>
+    <group>credential_theft,attack,</group>
+  </rule>
+
+  <rule id="100712" level="13">
+    <if_sid>100700</if_sid>
+    <field name="signal">^cve_exploit_attempt$</field>
+    <description>EasyPot: CVE exploit attempt ($(detail.decoyName)) from $(srcip)</description>
+    <mitre><id>T1190</id></mitre>
+    <group>exploit_attempt,attack,</group>
+  </rule>
+
+  <rule id="100713" level="10">
+    <if_sid>100700</if_sid>
+    <field name="signal">^block_added$</field>
+    <description>EasyPot: $(srcip) blocked ($(reason))</description>
+    <group>block,</group>
+  </rule>
+
+  <rule id="100714" level="11">
+    <if_sid>100700</if_sid>
+    <field name="signal">^decoy_login_attempt$</field>
+    <description>EasyPot: login attempt on decoy panel from $(srcip) as "$(detail.username)"</description>
+    <mitre><id>T1110</id></mitre>
+    <group>authentication_failed,attack,</group>
+  </rule>
+
+  <rule id="100715" level="10">
+    <if_sid>100700</if_sid>
+    <field name="signal">^decoy_secret_file$|^decoy_database_dump$|^decoy_source_exposure$|^decoy_internal_api$</field>
+    <description>EasyPot: $(srcip) retrieved decoy $(detail.decoyName)</description>
+    <mitre><id>T1552.001</id></mitre>
+    <group>recon,attack,</group>
+  </rule>
+
+  <!-- Severity fallbacks -->
+  <rule id="100720" level="12">
+    <if_sid>100700</if_sid>
+    <field name="severity">^critical$</field>
+    <description>EasyPot: critical $(signal) from $(srcip) (score $(score))</description>
+  </rule>
+
+  <rule id="100721" level="9">
+    <if_sid>100700</if_sid>
+    <field name="severity">^high$</field>
+    <description>EasyPot: $(signal) from $(srcip) (score $(score))</description>
+  </rule>
+
+  <rule id="100722" level="5">
+    <if_sid>100700</if_sid>
+    <field name="severity">^medium$</field>
+    <description>EasyPot: $(signal) from $(srcip) (score $(score))</description>
+  </rule>
+
+  <rule id="100723" level="3">
+    <if_sid>100700</if_sid>
+    <field name="severity">^low$</field>
+    <description>EasyPot: $(signal) from $(srcip)</description>
+  </rule>
+
+  <!-- Correlation: sustained high-severity activity from one source -->
+  <rule id="100730" level="12" frequency="5" timeframe="300">
+    <if_matched_sid>100721</if_matched_sid>
+    <same_srcip />
+    <description>EasyPot: repeated high-severity activity from $(srcip) — likely automated attack in progress</description>
+    <group>attack,</group>
+  </rule>
+
+</group>

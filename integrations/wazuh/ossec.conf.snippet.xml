@@ -1,0 +1,23 @@
+<!--
+  1) On the host running EasyPot (Wazuh AGENT ossec.conf):
+     read EasyPot's JSON event log.
+-->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/lib/easypot/events.jsonl</location>
+  <label key="@source">easypot</label>
+</localfile>
+
+<!--
+  2) On the Wazuh MANAGER ossec.conf:
+     block the source IP on every agent when EasyPot is certain.
+     Rules: 100710 agent canary, 100711 honeytoken replay, 100712 CVE exploit, 100713 EasyPot block.
+     `firewall-drop` ships with Wazuh (iptables / firewalld / pf depending on OS).
+-->
+<active-response>
+  <disabled>no</disabled>
+  <command>firewall-drop</command>
+  <location>all</location>
+  <rules_id>100710,100711,100712,100713,100730</rules_id>
+  <timeout>86400</timeout>
+</active-response>

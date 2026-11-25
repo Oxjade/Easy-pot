@@ -1,0 +1,19 @@
+{
+  "name": "easypot",
+  "version": "0.1.0",
+  "description": "Deception layer that catches AI hacking agents, scanners and bots before they find your real weaknesses.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --disable-warning=ExperimentalWarning dist/index.js",
+    "dev": "tsc -p tsconfig.json && node --disable-warning=ExperimentalWarning dist/index.js",
+    "test": "tsc -p tsconfig.json && node --disable-warning=ExperimentalWarning test/e2e.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.0"
+  }
+}
