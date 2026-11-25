@@ -62,6 +62,10 @@ Your app receives `X-EasyPot-Score` and `X-EasyPot-Class` on every request. You 
 
 > Pages carry per-visitor tripwires. If a CDN caches HTML publicly, detection still works, but attribution may point at the visitor who warmed the cache.
 
+## Landing page
+
+`site/` is a static product page for EasyPot: plain HTML, CSS and a little JavaScript, with no build step or external requests. Preview it with any static server, for example `python3 -m http.server -d site 4321`, then open http://127.0.0.1:4321. It shares the dashboard's fonts and icons (IBM Carbon, Apache-2.0; Instrument Sans and IBM Plex Mono, OFL). `site/assets/dashboard.jpg` is a screenshot of the demo.
+
 ## Integrations
 
 Wazuh (rules plus active response), syslog JSON/CEF for Splunk, Elastic, Sentinel and QRadar, firewall blocklist feeds (Palo Alto EDL, FortiGate, pfSense/OPNsense, ipset), STIX 2.1, and Slack and generic webhooks. See **[integrations/README.md](integrations/README.md)**.
