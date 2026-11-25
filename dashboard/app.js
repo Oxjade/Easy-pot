@@ -49,9 +49,9 @@ function ago(ts) {
   return `${Math.floor(s / 86400)}d ago`;
 }
 function scoreColor(n) {
-  return n >= 80 ? 'var(--sev-critical)' : n >= 55 ? 'var(--honey)' : n >= 30 ? 'var(--sev-medium)' : 'var(--sev-low)';
+  return n >= 80 ? 'var(--sev-critical)' : n >= 55 ? 'var(--sev-high)' : n >= 30 ? 'var(--sev-medium)' : 'var(--sev-low)';
 }
-const scoreCell = n => `<span class="score" style="color:${scoreColor(n)}">${Math.round(n)}</span><span class="score-meter"><i style="width:${Math.min(100, n)}%;background:${scoreColor(n)}"></i></span>`;
+const scoreCell = n => `<span class="score-wrap"><span class="score" style="color:${scoreColor(n)}">${Math.round(n)}</span><span class="score-meter"><i style="width:${Math.min(100, n)}%;background:${scoreColor(n)}"></i></span></span>`;
 
 function describe(e) {
   const d = e.detail || {};
@@ -106,6 +106,7 @@ function logout() {
   TOKEN = '';
   es?.close();
   $('#app').hidden = true;
+  if (!$('#login-art').firstChild) drawTerrain();
   $('#login').hidden = false;
 }
 
@@ -120,12 +121,12 @@ function connectStream() {
 
 // ---------------- router ----------------
 const ROUTES = {
-  overview: { title: 'Overview', sub: 'What tried to break in, and what got caught', render: renderOverview },
-  actors: { title: 'Attackers', sub: 'Every visitor that tripped something, ranked by risk', render: renderActors },
-  events: { title: 'Event log', sub: 'Every signal EasyPot recorded', render: renderEvents },
-  decoys: { title: 'Decoys', sub: 'Traps deployed on your site and how often they were triggered', render: renderDecoys },
-  blocks: { title: 'Blocklist', sub: 'IPs and visitors currently blocked; published to your firewalls', render: renderBlocks },
-  integrations: { title: 'Integrations', sub: 'Feed EasyPot into Wazuh, your SIEM and your firewalls', render: renderIntegrations },
+  overview: { title: 'Overview', eyebrow: 'Live threat picture', sub: 'What tried to break in, and what got caught', render: renderOverview },
+  actors: { title: 'Attackers', eyebrow: 'Ranked by risk', sub: 'Every visitor that tripped something, ranked by risk', render: renderActors },
+  events: { title: 'Event log', eyebrow: 'Every signal', sub: 'Every signal EasyPot recorded', render: renderEvents },
+  decoys: { title: 'Decoys', eyebrow: 'Traps deployed', sub: 'Traps deployed on your site and how often they were triggered', render: renderDecoys },
+  blocks: { title: 'Blocklist', eyebrow: 'Firewall feed', sub: 'IPs and visitors currently blocked; published to your firewalls', render: renderBlocks },
+  integrations: { title: 'Integrations', eyebrow: 'Wazuh · SIEM · Firewalls', sub: 'Feed EasyPot into Wazuh, your SIEM and your firewalls', render: renderIntegrations },
 };
 
 async function route() {
@@ -133,6 +134,8 @@ async function route() {
   const r = ROUTES[name] ?? ROUTES.overview;
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.dataset.route === name));
   $('#page-title').textContent = r.title;
+  $('#page-eyebrow').textContent = r.eyebrow;
+  $('#crumb').textContent = r.title;
   $('#page-sub').textContent = r.sub;
   $('#range').parentElement.querySelector('select').style.visibility = name === 'overview' ? 'visible' : 'hidden';
   liveHandlers = [];
@@ -152,12 +155,12 @@ async function renderOverview(view) {
 
   view.innerHTML = `
     <div class="grid kpis">
-      ${kpi('Requests', k.requests, `analysed · ${span}`)}
-      ${kpi('Visitors', k.visitors, 'distinct identities')}
-      ${kpi('Threats', k.threats, 'medium severity and up')}
-      ${kpi('AI agents caught', k.agents, 'followed planted instructions', 'accent')}
-      ${kpi('Credential replays', k.replays, 'stolen decoy secrets used', k.replays ? 'danger' : '')}
-      ${kpi('Active blocks', k.activeBlocks, 'IPs on the firewall feed')}
+      ${kpi('Requests', k.requests, `analysed · ${span}`, '', 'requests')}
+      ${kpi('Visitors', k.visitors, 'distinct identities', '', 'visitors')}
+      ${kpi('Threats', k.threats, 'medium severity and up', '', 'threats')}
+      ${kpi('AI agents caught', k.agents, 'followed planted instructions', 'accent', 'agents')}
+      ${kpi('Credential replays', k.replays, 'stolen decoy secrets used', k.replays ? 'danger' : '', 'replays')}
+      ${kpi('Active blocks', k.activeBlocks, 'IPs on the firewall feed', '', 'blocks')}
     </div>
     <div class="grid cols-3">
       <section class="card">
@@ -180,8 +183,8 @@ async function renderOverview(view) {
       </section>
       <section class="card">
         <div class="card-h"><h2>Who's knocking</h2><span class="muted">visitor classes</span></div>
-        ${barList(o.byClass.filter(c => c.cls !== 'unknown').sort((a, b) => b.n - a.n).map(c => ({ name: CLASS_LABEL[c.cls] ?? c.cls, n: c.n, color: c.cls === 'llm_agent' ? 'var(--honey)' : c.cls === 'human' ? 'var(--ok)' : c.cls === 'scanner' ? 'var(--sev-high)' : 'var(--sev-low)' })))}
-        ${o.payloads.length ? `<div class="card-h" style="margin-top:22px"><h2>Attack payloads</h2></div>${barList(o.payloads.map(p => ({ name: String(p.category).replace(/_/g, ' '), n: p.n, color: 'var(--sev-high)' })))}` : ''}
+        ${barList(o.byClass.filter(c => c.cls !== 'unknown').sort((a, b) => b.n - a.n).map(c => ({ name: CLASS_LABEL[c.cls] ?? c.cls, n: c.n })))}
+        ${o.payloads.length ? `<div class="card-h" style="margin-top:26px"><h2>Attack payloads</h2></div>${barList(o.payloads.map(p => ({ name: String(p.category).replace(/_/g, ' '), n: p.n })))}` : ''}
       </section>
     </div>
     <div class="grid cols-3">
@@ -206,8 +209,16 @@ async function renderOverview(view) {
   });
 }
 
-function kpi(name, value, hint, cls = '') {
-  return `<div class="card kpi ${cls}"><div class="k-label">${esc(name)}</div><div class="k-value">${fmt(value)}</div><div class="k-hint">${esc(hint)}</div></div>`;
+const KPI_ICON = {
+  requests: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  visitors: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18.2 14.8c1.9.8 3 2.5 3.3 5.2"/>',
+  threats: '<path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17h.01"/>',
+  agents: '<rect x="6" y="6" width="12" height="12" rx="2.5"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9.5 2.5V6M14.5 2.5V6M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5"/>',
+  replays: '<circle cx="8" cy="15.5" r="4.2"/><path d="m11 12.5 9.5-9.5M17.5 6l3 3M14.5 9l2.2 2.2"/>',
+  blocks: '<circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/>',
+};
+function kpi(name, value, hint, cls = '', icon = '') {
+  return `<div class="card kpi ${cls}"><div class="k-top"><span class="k-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${KPI_ICON[icon] ?? ''}</svg></span><div class="k-label">${esc(name)}</div></div><div class="k-value">${fmt(value)}</div><div class="k-hint">${esc(hint)}</div></div>`;
 }
 
 function barList(rows) {
@@ -372,7 +383,7 @@ async function renderDecoys(view) {
   const ds = await api('/api/decoys');
   const cats = [...new Set(ds.map(d => d.category))];
   view.innerHTML = cats.map(c => `
-    <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:8px 0 0">${esc(c === 'cve' ? 'CVE exploit traps' : c)}</h2>
+    <h2 class="section-label"><span class="eyebrow"><span class="logo logo-xs" aria-hidden="true"></span>${esc(c === 'cve' ? 'CVE exploit traps' : c)}</span></h2>
     <div class="decoy-grid">${ds.filter(d => d.category === c).sort((a, b) => b.hits - a.hits).map(d => `
       <div class="decoy ${d.hits ? 'hot' : ''}">
         <div class="decoy-h"><strong>${esc(d.name)}</strong><span class="hits">${fmt(d.hits)}</span></div>
@@ -401,7 +412,7 @@ async function renderBlocks(view) {
       <input id="bl-target" placeholder="IP address or visitor ID" required>
       <input id="bl-reason" placeholder="Reason (optional)">
       <select id="bl-ttl"><option value="60">1 hour</option><option value="1440" selected>24 hours</option><option value="10080">7 days</option><option value="0">Permanent</option></select>
-      <button class="btn" type="submit" style="background:var(--honey);color:#1a1405;border-color:var(--honey)">Add block</button>
+      <button class="btn btn-primary" type="submit">Add block</button>
     </form>
     <section class="card"><div class="table-wrap"><table><thead><tr><th>Target</th><th>Kind</th><th>Reason</th><th>Source</th><th>Added</th><th>Expires</th><th></th></tr></thead><tbody id="bl-body"></tbody></table></div></section>`;
   $('#bl-form', view).onsubmit = async e => {
@@ -469,4 +480,30 @@ function boot() {
   connectStream();
   route();
 }
-if (TOKEN) boot(); else $('#login').hidden = false;
+// Line-art terrain behind the sign-in screen: two ribbed hills that fall into a valley floor,
+// with a perspective floor converging on the logo's light beam. Decorative only.
+function drawTerrain() {
+  const W = 1440, H = 900, N = 54, cx = W / 2;
+  let hills = '';
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const edge = 90 + t * 640;              // height at the left/right edges
+    const dip = 760 + t * 110;              // depth in the middle of the valley
+    const spread = 300 + t * 160;
+    hills += `<path d="M-60 ${edge.toFixed(1)} C${spread.toFixed(1)} ${(edge + 40).toFixed(1)} ${(cx - 260).toFixed(1)} ${dip.toFixed(1)} ${cx} ${dip.toFixed(1)} S${(W - spread).toFixed(1)} ${(edge + 40).toFixed(1)} ${W + 60} ${edge.toFixed(1)}" stroke-opacity="${(0.18 + 0.5 * (1 - t)).toFixed(2)}"/>`;
+  }
+  let floor = '';
+  for (let i = -30; i <= 30; i++) floor += `<path d="M${cx + i * 2.2} 690 L${cx + i * 46} ${H + 10}"/>`;
+  $('#login-art').innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax slice" fill="none">
+    <defs>
+      <linearGradient id="ln" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".3" stop-color="#fff" stop-opacity=".08"/><stop offset=".5" stop-color="#fff" stop-opacity=".02"/><stop offset=".7" stop-color="#fff" stop-opacity=".08"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient>
+      <linearGradient id="fl" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".12"/></linearGradient>
+      <radialGradient id="vg" cx=".5" cy=".42" r=".6"><stop offset=".35" stop-color="#030303" stop-opacity=".9"/><stop offset="1" stop-color="#030303" stop-opacity="0"/></radialGradient>
+    </defs>
+    <g stroke="url(#fl)" stroke-width=".7">${floor}</g>
+    <g stroke="url(#ln)" stroke-width=".8">${hills}</g>
+    <rect width="${W}" height="${H}" fill="url(#vg)"/>
+  </svg>`;
+}
+
+if (TOKEN) boot(); else { drawTerrain(); $('#login').hidden = false; }
