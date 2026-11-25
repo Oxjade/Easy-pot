@@ -116,6 +116,7 @@ h3 { font-size: 17px; font-weight: 600; letter-spacing: -.005em; }
 .step p { color: var(--ash); font-size: 14.5px; margin-top: 8px; }
 .step-art { margin-top: auto; padding: 22px; position: relative; }
 .step .snippet { font-size: 11px; padding: 12px; }
+.step .snippet.window { padding-top: 34px; }
 .snippet { margin: 0; padding: 14px 16px; font-size: 12.5px; line-height: 1.65; color: #d4d4d4; background: var(--black); border: 1px solid var(--line); border-radius: var(--r-control); overflow-x: auto; }
 .snippet .k { color: var(--ash); }
 .snippet .s { color: var(--white); }
