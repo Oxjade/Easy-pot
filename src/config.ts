@@ -47,6 +47,24 @@ export interface Config {
     fileLog: { enabled: boolean; path: string; minSeverity: Severity };
     webhooks: WebhookConfig[];
   };
+  /**
+   * Public attack range: visitors point their own AI agents at this instance and watch a live
+   * report of what EasyPot caught. Only for a dedicated demo instance — never in front of a real site.
+   */
+  playground: {
+    enabled: boolean;
+    host: string;
+    port: number;
+    /** URL agents are told to attack (the public address of the proxy). Empty = http://localhost:<listen.port>. */
+    targetUrl: string;
+    /** Serve the built-in fake app as the upstream instead of `upstream`. */
+    builtinTarget: boolean;
+    /** Landing page files served at / alongside the playground at /try. */
+    siteDir: string;
+    runMinutes: number;
+    maxRunsPerHourPerIp: number;
+    maxConcurrentSimulations: number;
+  };
 }
 
 const defaults: Config = {
@@ -82,6 +100,11 @@ const defaults: Config = {
     fileLog: { enabled: true, path: '', minSeverity: 'low' },
     webhooks: [],
   },
+  playground: {
+    enabled: false, host: '0.0.0.0', port: 8082, targetUrl: '', builtinTarget: true,
+    siteDir: fileURLToPath(new URL('../site', import.meta.url)),
+    runMinutes: 20, maxRunsPerHourPerIp: 20, maxConcurrentSimulations: 3,
+  },
 };
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -114,6 +137,10 @@ export function loadConfig(path = process.env.EASYPOT_CONFIG ?? './easypot.confi
   if (env.EASYPOT_TRUST_PROXY) cfg.trustProxy = env.EASYPOT_TRUST_PROXY === 'true';
   if (env.EASYPOT_SITE_NAME) cfg.siteName = env.EASYPOT_SITE_NAME;
   if (!cfg.integrations.fileLog.path) cfg.integrations.fileLog.path = join(cfg.dataDir, 'events.jsonl');
+  if (env.EASYPOT_PLAYGROUND) cfg.playground.enabled = env.EASYPOT_PLAYGROUND === 'true';
+  if (env.EASYPOT_PLAYGROUND_PORT) cfg.playground.port = Number(env.EASYPOT_PLAYGROUND_PORT);
+  if (env.EASYPOT_PLAYGROUND_TARGET_URL) cfg.playground.targetUrl = env.EASYPOT_PLAYGROUND_TARGET_URL;
+  if (!cfg.playground.targetUrl) cfg.playground.targetUrl = `http://localhost:${cfg.listen.port}`;
 
   const generated: string[] = [];
   if (!cfg.secret) { cfg.secret = randomBytes(32).toString('hex'); generated.push('secret'); }

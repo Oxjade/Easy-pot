@@ -66,6 +66,12 @@ export class Honeytokens {
     return set;
   }
 
+  /** How many fake secrets this visitor has been handed (0 if it never opened a decoy that plants them). */
+  issuedCount(actorId: string): number {
+    const set = this.byActor.get(actorId);
+    return set ? Object.keys(set).length : 0;
+  }
+
   /** Look for any issued token anywhere in the request: headers, URL, body, basic auth. */
   detectReplay(ctx: ReqCtx): Signal[] {
     if (!this.byToken.size) return [];

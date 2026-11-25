@@ -69,6 +69,9 @@ export interface EasyPotEvent {
   detail: Record<string, unknown>;
 }
 
+/** How the proxy answered one request. Emitted as engine 'outcome' events. */
+export type Outcome = 'forwarded' | 'decoy' | 'tripwire' | 'labyrinth' | 'bait' | 'blocked';
+
 export interface Block {
   target: string;
   kind: 'ip' | 'actor';

@@ -123,6 +123,22 @@ export class Engine extends EventEmitter {
     this.emit('block', b);
   }
 
+  /**
+   * Give a visitor a clean slate: no blocks, no score, no cooldowns. Only the playground uses this,
+   * so each run against the demo target starts fresh even from an IP that was blocked earlier.
+   */
+  resetVisitor(a: Actor, ip: string): void {
+    this.removeBlock(ip);
+    this.removeBlock(a.id);
+    a.score = 0;
+    a.cls = 'unknown';
+    a.selfReport = null;
+    a.labyrinthDepth = 0;
+    for (const k of this.cooldowns.keys()) if (k.startsWith(a.id + '|')) this.cooldowns.delete(k);
+    this.lastBlockedLog.delete(a.id);
+    this.store.touch(a);
+  }
+
   removeBlock(target: string): boolean {
     const had = this.blocks.delete(target);
     const dbHad = this.store.deleteBlock(target);

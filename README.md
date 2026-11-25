@@ -62,6 +62,21 @@ Your app receives `X-EasyPot-Score` and `X-EasyPot-Class` on every request. You 
 
 > Pages carry per-visitor tripwires. If a CDN caches HTML publicly, detection still works, but attribution may point at the visitor who warmed the cache.
 
+## Playground: a public attack range
+
+Playground mode turns an EasyPot instance into a live demo. Visitors open `/try`, start a run, and point their own AI pentest agent at the target URL it gives them, or click **Run simulated agent**. The page then shows, live, how many requests it took EasyPot to detect and block the agent, how much of its traffic never reached the app, the fake secrets it took, what it said about itself, and the MITRE ATT&CK techniques it used.
+
+```bash
+npm run playground
+# landing page and attack range: http://127.0.0.1:8082/try
+# the target agents attack:      http://localhost:8080
+```
+
+- **Only on a dedicated demo instance.** The target is a built-in fake app with nothing real behind it. Never turn this on in front of a real site: a new run clears blocks for the visitor that claims it.
+- **How runs are tracked.** The first request carrying `?run=<id>` ties that IP and fingerprint to the run. Identities the agent switches to are pulled in through EasyPot's own attribution: the tripwire it follows and the stolen keys it replays. Runs last 20 minutes and are kept in memory.
+- **Deploying.** Put it behind a load balancer and set `EASYPOT_PLAYGROUND=true`, `EASYPOT_TRUST_PROXY=true` and `EASYPOT_PLAYGROUND_TARGET_URL` to the public URL of port 8080, for example `https://target.example.com`. Serve port 8082 as the website. Keep the dashboard on port 8081 private.
+- **Limits.** Run creation is rate-limited per address (20 an hour), and at most 3 simulated agents run at once. Settings live under `playground` in the config.
+
 ## Landing page
 
 `site/` is a static product page for EasyPot: plain HTML, CSS and a little JavaScript, with no build step or external requests. Preview it with any static server, for example `python3 -m http.server -d site 4321`, then open http://127.0.0.1:4321. It shares the dashboard's fonts and icons (IBM Carbon, Apache-2.0; Instrument Sans and IBM Plex Mono, OFL). `site/assets/dashboard.jpg` is a screenshot of the demo. When you deploy it, add a canonical link and make `og:image` an absolute URL on your domain (see the comment in `site/index.html`).

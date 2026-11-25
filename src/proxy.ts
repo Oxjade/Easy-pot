@@ -10,7 +10,7 @@ import type { Detectors } from './detectors.js';
 import type { Honeytokens } from './honeytokens.js';
 import type { DecoyRouter, DecoyEnv } from './decoys/index.js';
 import { Tripwires, labyrinthPage } from './tripwires.js';
-import type { Actor, ReqCtx, Signal } from './types.js';
+import type { Actor, Outcome, ReqCtx, Signal } from './types.js';
 import { clientIp, hmac, isAssetPath, sleep, uid } from './util.js';
 import type { Store } from './store.js';
 
@@ -78,9 +78,13 @@ export class Proxy {
     if (engine.isAllowlisted(ctx.ip)) return this.forward(ctx, req, res, rest, null);
 
     const actor = engine.actor(ctx);
+    // Listeners (the playground) may reset the visitor here, before the block check.
+    engine.emit('arrive', ctx, actor);
+    const done = (o: Outcome) => { engine.emit('outcome', ctx, actor, o); };
     const block = engine.blockFor(ctx);
     if (block) {
       engine.noteBlockedRequest(ctx, actor, block);
+      done('blocked');
       return this.blockResponse(res, ctx);
     }
 
@@ -105,6 +109,7 @@ export class Proxy {
       });
       if (shownTo && shownTo !== ctx.actorId) this.linkActor(shownTo, ctx);
       engine.evaluate(ctx, actor, signals);
+      done('tripwire');
       // Keep the agent believing it succeeded; it's blocked from its next request.
       return this.send(res, 200, 'application/json', JSON.stringify({
         status: 'registered', client_id: uid(), message: 'Registration accepted. Continue to the documentation archive.',
@@ -117,6 +122,7 @@ export class Proxy {
       signals.push({ type: 'tripwire_link_followed', weight: 35, severity: 'high', classHint: 'bot', cooldownKey: 'hiddenlink',
         detail: { tripwireSig: ctx.query.get('ref'), tripwireShownTo: this.sigOwners.get(ctx.query.get('ref') ?? '') ?? 'unknown' } });
       engine.evaluate(ctx, actor, signals);
+      done('tripwire');
       return this.send(res, 200, 'text/html; charset=utf-8', labyrinthPage(tw.labyrinthPrefix, '1' + ctx.sig.slice(0, 7), cfg.siteName).html);
     }
 
@@ -129,6 +135,7 @@ export class Proxy {
         signals.push({ type: 'labyrinth_depth', weight: 12, severity: 'medium', classHint: 'bot', cooldownKey: `maze:${page.depth}`, detail: { depth: page.depth } });
       }
       const v = engine.evaluate(ctx, actor, signals);
+      done('labyrinth');
       if (v.action === 'tarpit' || v.action === 'labyrinth') await sleep(this.tarpitDelay(actor));
       return this.send(res, 200, 'text/html; charset=utf-8', page.html);
     }
@@ -136,6 +143,7 @@ export class Proxy {
     // 4. robots.txt / llms.txt carry bait.
     if (tw.enabled && ctx.method === 'GET' && (lowerPath === '/robots.txt' || lowerPath === '/llms.txt')) {
       const v = engine.evaluate(ctx, actor, signals);
+      done(v.action === 'block' ? 'blocked' : 'bait');
       if (v.action === 'block') return this.blockResponse(res, ctx);
       if (lowerPath === '/robots.txt') {
         const existing = await this.fetchUpstreamText('/robots.txt', ctx);
@@ -151,6 +159,7 @@ export class Proxy {
       // Always serve the decoy, even if this hit tips the visitor into a block — revealing the
       // trap on the spot would teach the attacker; the block applies from the next request.
       const v = engine.evaluate(ctx, actor, [...signals, ...dsig]);
+      done('decoy');
       if (v.action === 'tarpit' || v.action === 'labyrinth') await sleep(this.tarpitDelay(actor));
       res.writeHead(dres.status, { ...dres.headers, 'cache-control': 'no-store', 'content-length': Buffer.byteLength(dres.body) });
       res.end(ctx.method === 'HEAD' ? undefined : dres.body);
@@ -159,11 +168,13 @@ export class Proxy {
 
     // 6. Normal traffic.
     const v = engine.evaluate(ctx, actor, signals);
-    if (v.action === 'block') return this.blockResponse(res, ctx);
+    if (v.action === 'block') { done('blocked'); return this.blockResponse(res, ctx); }
     if (v.action === 'labyrinth' && ctx.method === 'GET' && ctx.acceptsHtml && !ctx.isAsset) {
+      done('labyrinth');
       await sleep(this.tarpitDelay(actor));
       return this.send(res, 200, 'text/html; charset=utf-8', labyrinthPage(tw.labyrinthPrefix, '2' + ctx.sig.slice(0, 7), cfg.siteName).html);
     }
+    done('forwarded');
     if (v.action === 'tarpit' || v.action === 'labyrinth') await sleep(this.tarpitDelay(actor));
     return this.forward(ctx, req, res, rest, actor);
   }

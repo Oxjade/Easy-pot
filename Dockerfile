@@ -14,9 +14,10 @@ ENV NODE_ENV=production \
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY dashboard ./dashboard
+COPY site ./site
 COPY rules ./rules
 RUN mkdir -p /var/lib/easypot /etc/easypot && chown -R node:node /var/lib/easypot
 USER node
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8082
 VOLUME ["/var/lib/easypot"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "dist/index.js"]

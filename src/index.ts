@@ -9,6 +9,9 @@ import { BUILTIN_DECOYS, DecoyRouter, loadCvePack } from './decoys/index.js';
 import { Proxy } from './proxy.js';
 import { startAdmin } from './admin/server.js';
 import { wireOutputs } from './integrations/outputs.js';
+import { Runs } from './playground/runs.js';
+import { startPlayground } from './playground/server.js';
+import { startTarget } from './playground/target.js';
 
 /**
  * Before enabling decoys, make sure none of them shadow a real page on the protected site.
@@ -41,6 +44,10 @@ async function probeUpstream(upstream: string, router: DecoyRouter): Promise<voi
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  // Playground mode: a public attack range. Agents attack a built-in fake app, never a real site.
+  const target = cfg.playground.enabled && cfg.playground.builtinTarget ? await startTarget(cfg.siteName) : null;
+  if (target) cfg.upstream = target.url;
+  if (cfg.playground.enabled && !cfg.trustProxy) console.warn('[easypot] playground: trustProxy is off, so every visitor behind your load balancer shares one address');
   const store = new Store(cfg.dataDir);
   const engine = new Engine(cfg, store);
   const detectors = new Detectors();
@@ -58,6 +65,9 @@ async function main(): Promise<void> {
     console.log(`[easypot] ${decoys.all.length} decoys active (${decoys.all.filter(d => d.category === 'cve').length} CVE), stacks: ${cfg.stack.join(', ')}`);
   });
   const admin = startAdmin({ cfg, engine, store, decoys, startedAt: Date.now() });
+  const playground = cfg.playground.enabled
+    ? startPlayground(cfg, new Runs(engine, tokens, cfg.playground))
+    : null;
 
   const prune = setInterval(() => store.prune(cfg.retentionDays), 3_600_000);
   prune.unref();
@@ -66,6 +76,8 @@ async function main(): Promise<void> {
     console.log('[easypot] shutting down');
     server.close();
     admin.close();
+    playground?.close();
+    target?.close();
     store.close();
     process.exit(0);
   };

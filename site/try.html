@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Red-team our honeypot: live AI agent attack range | EasyPot</title>
+  <meta name="description" content="Point your AI pentest agent at an EasyPot-protected target and watch detection live: time to detect, requests to block, fake secrets taken and MITRE techniques.">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#000000">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="EasyPot">
+  <meta property="og:title" content="Red-team our honeypot with your AI agent">
+  <meta property="og:description" content="Point your AI pentest agent at our EasyPot-protected target and watch what it catches, live.">
+  <meta property="og:image" content="og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preload" href="fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="range">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="EasyPot home"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 20.1 7.3v9.4L12 21.4 3.9 16.7V7.3z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8.3 15.2 10.15v3.7L12 15.7 8.8 13.85v-3.7z" fill="currentColor"/></svg><span>EasyPot</span></a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="/try" aria-current="page">Live demo</a>
+        <a href="/#how">How it works</a>
+        <a href="/#features">Features</a>
+        <a href="/#start">Quick start</a>
+      </nav>
+      <a class="btn btn-primary btn-sm" href="/#start">Get started</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="range-hero">
+      <div class="wrap">
+        <h1>Red-team our honeypot.</h1>
+        <p class="range-sub">Point your AI pentest agent at our EasyPot-protected target. Watch the detection live.</p>
+        <div class="range-start" id="start-box">
+          <button class="btn btn-primary" id="start" type="button">Start a run</button>
+          <p class="fine">Each run lasts 20 minutes. The target is a fake app with nothing real behind it.</p>
+          <p class="error" id="start-error" role="alert"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap run" id="run" hidden>
+      <div class="run-brief">
+        <div class="brief-card">
+          <h2>Give your agent the target</h2>
+          <div class="field">
+            <code id="target-url"></code>
+            <button class="copy" type="button" data-copy-from="target-url"><svg class="icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M28,10V28H10V10H28m0-2H10a2,2,0,0,0-2,2V28a2,2,0,0,0,2,2H28a2,2,0,0,0,2-2V10a2,2,0,0,0-2-2Z"/><path d="M4,18H2V4A2,2,0,0,1,4,2H18V4H4Z"/></svg>Copy</button>
+          </div>
+          <p class="brief-label">Prompt to paste into your agent</p>
+          <div class="prompt">
+            <p id="prompt"></p>
+            <button class="copy" type="button" data-copy-from="prompt"><svg class="icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M28,10V28H10V10H28m0-2H10a2,2,0,0,0-2,2V28a2,2,0,0,0,2,2H28a2,2,0,0,0,2-2V10a2,2,0,0,0-2-2Z"/><path d="M4,18H2V4A2,2,0,0,1,4,2H18V4H4Z"/></svg>Copy</button>
+          </div>
+        </div>
+        <div class="brief-card brief-sim">
+          <h2>No agent handy?</h2>
+          <p>Run our simulated AI agent. It browses, follows the planted instruction, rotates IPs and replays a stolen key.</p>
+          <button class="btn btn-ghost" id="simulate" type="button"><svg class="icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M18 10H20V12H18z"/><path d="M12 10H14V12H12z"/><path d="M26,20H21V18h1a2.0023,2.0023,0,0,0,2-2V12h2V10H24V8a2.0023,2.0023,0,0,0-2-2H20V2H18V6H14V2H12V6H10A2.0023,2.0023,0,0,0,8,8v2H6v2H8v4a2.0023,2.0023,0,0,0,2,2h1v2H6a2.0023,2.0023,0,0,0-2,2v8H6V22H26v8h2V22A2.0023,2.0023,0,0,0,26,20ZM10,8H22v8H10Zm3,10h6v2H13Z"/></svg>Run simulated agent</button>
+          <p class="error" id="sim-error" role="alert"></p>
+        </div>
+      </div>
+
+      <div class="status" id="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <strong id="status-title">Waiting for your agent</strong>
+        <span id="status-note">Nothing has hit the target yet.</span>
+        <span class="status-time" id="status-time"></span>
+      </div>
+
+      <div class="metrics" aria-label="Run results">
+        <div class="metric"><span class="metric-label">Detected after</span><span class="metric-value" id="m-detect">–</span><span class="metric-note" id="m-detect-note">Waiting</span></div>
+        <div class="metric"><span class="metric-label">Blocked after</span><span class="metric-value" id="m-block">–</span><span class="metric-note" id="m-block-note">Waiting</span></div>
+        <div class="metric"><span class="metric-label">Kept from the app</span><span class="metric-value" id="m-kept">–</span><span class="metric-note" id="m-kept-note">of the agent’s requests</span></div>
+        <div class="metric"><span class="metric-label">Fake secrets taken</span><span class="metric-value" id="m-secrets">0</span><span class="metric-note" id="m-secrets-note">all traceable</span></div>
+      </div>
+
+      <div class="said-box" id="said">
+        <span class="said-label">What the agent told us</span>
+        <q id="said-text" hidden></q>
+        <p id="said-empty">Nothing yet. Agents that act on the instruction planted in our pages usually name their model and task.</p>
+      </div>
+
+      <div class="run-grid">
+        <section class="panel-l">
+          <div class="panel-h"><h2>Request log</h2><span id="req-count">0 requests</span></div>
+          <ol class="reqlog" id="reqlog"><li class="empty-row">Requests appear here as your agent makes them.</li></ol>
+        </section>
+        <section class="panel-l">
+          <div class="panel-h"><h2>Detections</h2><span id="det-count">0</span></div>
+          <ol class="detlog" id="detlog"><li class="empty-row">Nothing detected yet.</li></ol>
+          <div class="techniques" id="techniques" hidden>
+            <h3>MITRE ATT&amp;CK techniques</h3>
+            <ul id="tech-list"></ul>
+          </div>
+          <dl class="facts-grid" id="facts">
+            <div><dt>Identities linked</dt><dd id="f-ids">0</dd></div>
+            <div><dt>Stolen key replays caught</dt><dd id="f-replays">0</dd></div>
+            <div><dt>Decoys triggered</dt><dd id="f-decoys">0</dd></div>
+            <div><dt>Reached the app after detection</dt><dd id="f-after">0</dd></div>
+          </dl>
+        </section>
+      </div>
+
+      <p class="run-again"><button class="btn btn-ghost btn-sm" id="restart" type="button">Start a new run</button></p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <a class="brand" href="/"><svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 20.1 7.3v9.4L12 21.4 3.9 16.7V7.3z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 8.3 15.2 10.15v3.7L12 15.7 8.8 13.85v-3.7z" fill="currentColor"/></svg><span>EasyPot</span></a>
+      <p>Deception technology for web applications.</p>
+      <nav aria-label="Footer">
+        <a href="/#how">How it works</a>
+        <a href="/#features">Features</a>
+        <a href="/#start">Quick start</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="try.js" defer></script>
+</body>
+</html>
