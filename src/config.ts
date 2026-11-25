@@ -1,4 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import type { Severity } from './types.js';
 
@@ -57,7 +59,8 @@ const defaults: Config = {
   secret: '',
   dataDir: './data',
   admin: { host: '127.0.0.1', port: 8081, token: '', feedToken: '' },
-  decoys: { enabled: true, exclude: [], probeUpstream: true, cvePack: null },
+  // The CVE pack that ships with EasyPot is on by default; set cvePack to null to turn it off.
+  decoys: { enabled: true, exclude: [], probeUpstream: true, cvePack: fileURLToPath(new URL('../rules/cve-pack.json', import.meta.url)) },
   tripwires: {
     enabled: true,
     canaryPrefix: '/.well-known/agent-registration',
@@ -75,7 +78,8 @@ const defaults: Config = {
   allowlist: { ips: [], cidrs: [] },
   integrations: {
     syslog: { enabled: false, host: '127.0.0.1', port: 514, protocol: 'udp', format: 'json', minSeverity: 'low' },
-    fileLog: { enabled: true, path: './data/events.jsonl', minSeverity: 'low' },
+    // An empty path means <dataDir>/events.jsonl, so EASYPOT_DATA_DIR moves the event log too.
+    fileLog: { enabled: true, path: '', minSeverity: 'low' },
     webhooks: [],
   },
 };
@@ -109,6 +113,7 @@ export function loadConfig(path = process.env.EASYPOT_CONFIG ?? './easypot.confi
   if (env.EASYPOT_DATA_DIR) cfg.dataDir = env.EASYPOT_DATA_DIR;
   if (env.EASYPOT_TRUST_PROXY) cfg.trustProxy = env.EASYPOT_TRUST_PROXY === 'true';
   if (env.EASYPOT_SITE_NAME) cfg.siteName = env.EASYPOT_SITE_NAME;
+  if (!cfg.integrations.fileLog.path) cfg.integrations.fileLog.path = join(cfg.dataDir, 'events.jsonl');
 
   const generated: string[] = [];
   if (!cfg.secret) { cfg.secret = randomBytes(32).toString('hex'); generated.push('secret'); }
