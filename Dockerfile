@@ -20,4 +20,6 @@ RUN mkdir -p /var/lib/easypot /etc/easypot && chown -R node:node /var/lib/easypo
 USER node
 EXPOSE 8080 8081 8082
 VOLUME ["/var/lib/easypot"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${EASYPOT_ADMIN_PORT:-8081}/healthz" >/dev/null || exit 1
 CMD ["node", "--disable-warning=ExperimentalWarning", "dist/index.js"]

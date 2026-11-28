@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import { loadConfig } from './config.js';
+import { ConfigError, loadConfig } from './config.js';
 import { Store } from './store.js';
 import { Engine } from './engine.js';
 import { Detectors } from './detectors.js';
@@ -85,4 +85,8 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
-main().catch(err => { console.error('[easypot] fatal:', err); process.exit(1); });
+main().catch(err => {
+  if (err instanceof ConfigError) console.error(`[easypot] config error: ${err.message}`);
+  else console.error('[easypot] fatal:', err);
+  process.exit(1);
+});

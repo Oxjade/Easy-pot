@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -125,7 +125,13 @@ function merge<T>(base: T, over: unknown): T {
 
 export function loadConfig(path = process.env.EASYPOT_CONFIG ?? './easypot.config.json'): Config {
   let fileCfg: unknown = {};
-  if (existsSync(path)) fileCfg = JSON.parse(readFileSync(path, 'utf8'));
+  if (existsSync(path)) {
+    if (statSync(path).isDirectory()) {
+      throw new ConfigError(`${path} is a directory, not a config file. Docker creates an empty directory when the file you mount doesn't exist: copy easypot.config.example.json to easypot.config.json first.`);
+    }
+    try { fileCfg = JSON.parse(readFileSync(path, 'utf8')); }
+    catch (e) { throw new ConfigError(`${path} is not valid JSON: ${(e as Error).message}`); }
+  }
   const cfg = merge(defaults, fileCfg);
 
   const env = process.env;
@@ -145,6 +151,14 @@ export function loadConfig(path = process.env.EASYPOT_CONFIG ?? './easypot.confi
   if (env.EASYPOT_PLAYGROUND_TARGET_URL) cfg.playground.targetUrl = env.EASYPOT_PLAYGROUND_TARGET_URL;
   if (!cfg.playground.targetUrl) cfg.playground.targetUrl = `http://localhost:${cfg.listen.port}`;
 
+  // In production, ephemeral secrets would change on every restart: firewalls lose the feed,
+  // dashboards are logged out and every honeytoken becomes unrecognisable. Refuse to start instead.
+  if (env.NODE_ENV === 'production') {
+    const weak = ([['secret', cfg.secret, 'EASYPOT_SECRET'], ['admin.token', cfg.admin.token, 'EASYPOT_ADMIN_TOKEN'], ['admin.feedToken', cfg.admin.feedToken, 'EASYPOT_FEED_TOKEN']] as const)
+      .filter(([, v]) => !v || v.length < 16);
+    if (weak.length) throw new ConfigError(`production needs ${weak.map(([k, , e]) => `${k} (or ${e})`).join(', ')} set to at least 16 random characters, e.g. \`openssl rand -hex 24\``);
+  }
+
   const generated: string[] = [];
   if (!cfg.secret) { cfg.secret = randomBytes(32).toString('hex'); generated.push('secret'); }
   if (!cfg.admin.token) { cfg.admin.token = randomBytes(18).toString('base64url'); generated.push('admin.token'); }
@@ -156,3 +170,6 @@ export function loadConfig(path = process.env.EASYPOT_CONFIG ?? './easypot.confi
   new URL(cfg.upstream); // throws early on a bad upstream
   return cfg;
 }
+
+/** A problem with the configuration, reported without a stack trace. */
+export class ConfigError extends Error {}

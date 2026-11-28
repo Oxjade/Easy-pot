@@ -206,6 +206,14 @@ await step('firewall feed lists blocked IPs and rejects bad tokens', async () =>
   assert.ok(stix.objects.some(o => o.pattern?.includes('203.0.113.50')));
 });
 
+await step('health check answers without a token and reveals nothing else', async () => {
+  const r = await fetch(`http://127.0.0.1:${ADM}/healthz`);
+  assert.equal(r.status, 200);
+  const body = await r.json();
+  assert.equal(body.status, 'ok');
+  assert.deepEqual(Object.keys(body).sort(), ['status', 'uptimeSec']);
+});
+
 await step('admin API requires the token', async () => {
   assert.equal((await fetch(`http://127.0.0.1:${ADM}/api/overview`)).status, 401);
 });

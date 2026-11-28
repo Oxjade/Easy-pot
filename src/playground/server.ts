@@ -42,6 +42,8 @@ export function startPlayground(cfg: Config, runs: Runs): http.Server {
       const p = url.pathname;
       const method = req.method ?? 'GET';
 
+      if (p === '/healthz') return json(res, 200, { status: 'ok' });
+
       if (p === '/api/runs' && method === 'POST') {
         req.resume();
         try {

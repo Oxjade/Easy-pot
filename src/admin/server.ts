@@ -86,6 +86,13 @@ export function startAdmin(d: Deps): http.Server {
     const p = url.pathname;
     const m = req.method ?? 'GET';
 
+    // ---- health (no token; says nothing beyond "up") for load balancers and Docker ----
+    if (p === '/healthz') {
+      try { store.db.prepare('SELECT 1').get(); }
+      catch { return sendJson(res, 503, { status: 'error' }); }
+      return sendJson(res, 200, { status: 'ok', uptimeSec: Math.round((Date.now() - d.startedAt) / 1000) });
+    }
+
     // ---- feeds (feed token OR admin token) ----
     if (p.startsWith('/feeds/')) {
       const t = presentedToken(req, url);
