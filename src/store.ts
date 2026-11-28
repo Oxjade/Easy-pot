@@ -47,6 +47,16 @@ export class Store {
     }
     this.flushTimer = setInterval(() => this.flush(), 5000);
     this.flushTimer.unref();
+    // Visitors live in the database; keep only recently active ones in memory, or every
+    // visitor ever seen (or every address an attacker rotates through) would stay there forever.
+    setInterval(() => this.evictIdle(), 60_000).unref();
+  }
+
+  /** Drop visitors idle for 30 minutes from memory once they're safely written to the database. */
+  evictIdle(idleMs = 30 * 60_000): void {
+    this.flush();
+    const cutoff = Date.now() - idleMs;
+    for (const [id, a] of this.actors) if (a.lastSeen < cutoff && !this.dirty.has(id)) this.actors.delete(id);
   }
 
   getActor(id: string): Actor | undefined {

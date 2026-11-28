@@ -83,7 +83,12 @@ class Syslog {
 
 class Webhooks {
   private last = new Map<string, number>();
-  constructor(private hooks: WebhookConfig[], private siteName: string) {}
+  constructor(private hooks: WebhookConfig[], private siteName: string) {
+    setInterval(() => {
+      const cutoff = Date.now() - 600_000;
+      for (const [k, t] of this.last) if (t < cutoff) this.last.delete(k);
+    }, 60_000).unref();
+  }
   async send(e: EasyPotEvent): Promise<void> {
     for (const h of this.hooks) {
       if (!atLeast(e.severity, h.minSeverity)) continue;

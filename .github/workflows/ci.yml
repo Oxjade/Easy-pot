@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t easypot:ci .
+      - name: Start it in production mode and wait for the health check
+        run: |
+          docker run -d --name easypot \
+            -e EASYPOT_SECRET="$(openssl rand -hex 24)" \
+            -e EASYPOT_ADMIN_TOKEN="$(openssl rand -hex 24)" \
+            -e EASYPOT_FEED_TOKEN="$(openssl rand -hex 24)" \
+            -e EASYPOT_UPSTREAM=http://127.0.0.1:9 \
+            easypot:ci
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' easypot)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker logs easypot
+          exit 1

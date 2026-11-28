@@ -14,6 +14,7 @@ import type { Actor, Outcome, ReqCtx, Signal } from './types.js';
 import { clientIp, hmac, isAssetPath, peerIp, sleep, trustedHops, uid } from './util.js';
 import type { Store } from './store.js';
 
+const SIG_OWNERS_MAX = 250_000;
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'proxy-connection']);
 const MAX_INJECT_BYTES = 5 * 1024 * 1024;
 
@@ -25,7 +26,7 @@ export class Proxy {
   readonly tripwires: Tripwires;
   private upstream: URL;
   private agent: http.Agent;
-  /** Tripwire signature -> the visitor it was shown to. */
+  /** Tripwire signature -> the visitor it was shown to. Most recently seen last, capped (see rememberSig()). */
   private sigOwners = new Map<string, string>();
   private decoyEnv: DecoyEnv;
 
@@ -51,6 +52,16 @@ export class Proxy {
     });
   };
 
+  /**
+   * Remember who a tripwire signature belongs to, most recent last. Capped so that an attacker
+   * rotating through addresses can't grow it without bound; the oldest, long-idle visitors go first.
+   */
+  private rememberSig(sig: string, actorId: string): void {
+    this.sigOwners.delete(sig);
+    this.sigOwners.set(sig, actorId);
+    if (this.sigOwners.size > SIG_OWNERS_MAX) this.sigOwners.delete(this.sigOwners.keys().next().value!);
+  }
+
   private buildCtx(req: IncomingMessage, body: Buffer): ReqCtx {
     const { cfg } = this.d;
     const ip = clientIp(req, cfg.trustProxy);
@@ -58,7 +69,7 @@ export class Proxy {
     const ua = String(req.headers['user-agent'] ?? '');
     const actorId = hmac(cfg.secret, `${ip}|${ua}|${req.headers['accept-language'] ?? ''}`, 16);
     const sig = hmac(cfg.secret, `sig|${actorId}`, 12);
-    this.sigOwners.set(sig, actorId);
+    this.rememberSig(sig, actorId);
     const rawUrl = req.url ?? '/';
     const parsed = new URL(rawUrl.startsWith('/') ? rawUrl : '/' + rawUrl, 'http://x');
     const accept = String(req.headers.accept ?? '');
