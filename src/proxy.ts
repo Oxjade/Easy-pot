@@ -90,6 +90,11 @@ export class Proxy {
     }
 
     const signals: Signal[] = [...detectors.analyze(ctx), ...tokens.detectReplay(ctx)];
+    // Whoever was handed a replayed credential leaked it to (or is) the attacker: block them too.
+    for (const s of signals) {
+      const issuedTo = s.type === 'honeytoken_replay' ? s.detail?.issuedTo : undefined;
+      if (typeof issuedTo === 'string') this.linkActor(issuedTo, ctx, 'honeytoken_replay');
+    }
     const tw = cfg.tripwires;
     const lowerPath = ctx.path.toLowerCase();
 
@@ -108,7 +113,7 @@ export class Proxy {
           params: Object.fromEntries([...ctx.query].slice(0, 10)),
         },
       });
-      if (shownTo && shownTo !== ctx.actorId) this.linkActor(shownTo, ctx);
+      if (shownTo && shownTo !== ctx.actorId) this.linkActor(shownTo, ctx, 'agent_instruction_followed');
       engine.evaluate(ctx, actor, signals);
       done('tripwire');
       // Keep the agent believing it succeeded; it's blocked from its next request.
@@ -180,14 +185,20 @@ export class Proxy {
     return this.forward(ctx, req, res, rest, actor);
   }
 
-  private linkActor(originalId: string, ctx: ReqCtx): void {
+  /**
+   * The current visitor is provably the same attacker as an earlier one (it followed that visitor's
+   * tripwire, or used credentials only that visitor was given), so block the earlier identity too.
+   */
+  private linkActor(originalId: string, ctx: ReqCtx, via: 'agent_instruction_followed' | 'honeytoken_replay'): void {
+    if (originalId === ctx.actorId || !this.d.cfg.autoBlock) return;
     const orig = this.d.store.getActor(originalId);
     if (!orig) return;
-    orig.cls = 'llm_agent';
+    if (via === 'agent_instruction_followed') orig.cls = 'llm_agent';
     this.d.store.touch(orig);
     const until = ctx.ts + this.d.cfg.blockTtlMinutes * 60_000;
-    this.d.engine.addBlock({ target: originalId, kind: 'actor', reason: 'linked to agent_instruction_followed', created: ctx.ts, expires: until, source: 'auto' });
-    if (orig.ip !== ctx.ip) this.d.engine.addBlock({ target: orig.ip, kind: 'ip', reason: 'linked to agent_instruction_followed', created: ctx.ts, expires: until, source: 'auto' });
+    const reason = `linked to ${via}`;
+    this.d.engine.addBlock({ target: originalId, kind: 'actor', reason, created: ctx.ts, expires: until, source: 'auto' });
+    if (orig.ip !== ctx.ip && !this.d.engine.isAllowlisted(orig.ip)) this.d.engine.addBlock({ target: orig.ip, kind: 'ip', reason, created: ctx.ts, expires: until, source: 'auto' });
   }
 
   private tarpitDelay(a: Actor): number {

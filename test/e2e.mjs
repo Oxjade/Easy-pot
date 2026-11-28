@@ -136,6 +136,13 @@ await step('replaying the stolen DB password from another IP is caught and block
   assert.equal(r.status, 403);
 });
 
+await step('the visitor the replayed credential was issued to is blocked too', async () => {
+  const blocks = await admin('/api/blocks');
+  const leaker = blocks.find(b => b.target === SCAN_IP);
+  assert.ok(leaker, 'the address that took the .env is blocked');
+  assert.match(leaker.reason, /honeytoken_replay/);
+});
+
 await step('stolen AWS key inside a SigV4 Authorization header is caught', async () => {
   const key = /AWS_ACCESS_KEY_ID=(\S+)/.exec(envText)[1];
   const r = await req('/api/upload', { ip: '192.0.2.98', headers: { 'user-agent': 'aws-cli/2.15',
