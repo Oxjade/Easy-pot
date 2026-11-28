@@ -83,7 +83,7 @@ npm run playground
 
 ## Integrations
 
-Wazuh (rules plus active response), syslog JSON/CEF for Splunk, Elastic, Sentinel and QRadar, firewall blocklist feeds (Palo Alto EDL, FortiGate, pfSense/OPNsense, ipset), STIX 2.1, and Slack and generic webhooks. See **[integrations/README.md](integrations/README.md)**.
+Wazuh (rules plus active response), syslog JSON/CEF for Splunk, Elastic, Sentinel and QRadar, firewall blocklist feeds (Palo Alto EDL, FortiGate, pfSense/OPNsense, ipset), STIX 2.1, and Slack and generic webhooks. See **[integrations/README.md](integrations/README.md)** for setup, and **[docs/INTEGRATION.md](docs/INTEGRATION.md)** for where EasyPot goes in your traffic path (nginx, load balancers, Cloudflare, Kubernetes) and what each connection gives you.
 
 ## Admin API
 
