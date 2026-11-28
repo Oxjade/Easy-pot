@@ -11,7 +11,7 @@ import type { Honeytokens } from './honeytokens.js';
 import type { DecoyRouter, DecoyEnv } from './decoys/index.js';
 import { Tripwires, labyrinthPage } from './tripwires.js';
 import type { Actor, Outcome, ReqCtx, Signal } from './types.js';
-import { clientIp, hmac, isAssetPath, sleep, uid } from './util.js';
+import { clientIp, hmac, isAssetPath, peerIp, sleep, trustedHops, uid } from './util.js';
 import type { Store } from './store.js';
 
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'proxy-connection']);
@@ -54,6 +54,7 @@ export class Proxy {
   private buildCtx(req: IncomingMessage, body: Buffer): ReqCtx {
     const { cfg } = this.d;
     const ip = clientIp(req, cfg.trustProxy);
+    const peer = peerIp(req);
     const ua = String(req.headers['user-agent'] ?? '');
     const actorId = hmac(cfg.secret, `${ip}|${ua}|${req.headers['accept-language'] ?? ''}`, 16);
     const sig = hmac(cfg.secret, `sig|${actorId}`, 12);
@@ -63,7 +64,7 @@ export class Proxy {
     const accept = String(req.headers.accept ?? '');
     return {
       id: uid(), ts: Date.now(), ip, method: (req.method ?? 'GET').toUpperCase(), url: rawUrl, path: parsed.pathname,
-      query: parsed.searchParams, headers: req.headers, ua, body, actorId, sig,
+      query: parsed.searchParams, headers: req.headers, ua, peer, body, actorId, sig,
       acceptsHtml: accept.includes('text/html') || accept === '' || accept === '*/*',
       isAsset: isAssetPath(parsed.pathname),
     };
@@ -216,7 +217,8 @@ export class Proxy {
     for (const [k, v] of Object.entries(ctx.headers)) if (!HOP.has(k) && v !== undefined) h[k] = v;
     if (!this.d.cfg.preserveHost) h.host = this.upstream.host;
     const prior = ctx.headers['x-forwarded-for'];
-    h['x-forwarded-for'] = this.d.cfg.trustProxy && prior ? `${prior}, ${ctx.ip}` : ctx.ip;
+    // Standard chaining: append the hop we received the request from; X-Real-IP carries the resolved client.
+    h['x-forwarded-for'] = trustedHops(this.d.cfg.trustProxy) && prior ? `${prior}, ${ctx.peer}` : ctx.ip;
     h['x-forwarded-proto'] = String(ctx.headers['x-forwarded-proto'] ?? 'http');
     h['x-real-ip'] = ctx.ip;
     if (actor) {

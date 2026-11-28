@@ -29,6 +29,8 @@ export interface ReqCtx {
   query: URLSearchParams;
   headers: IncomingHttpHeaders;
   ua: string;
+  /** The hop that connected to EasyPot (a load balancer, or the client itself). */
+  peer: string;
   body: Buffer;
   actorId: string;
   /** Attribution signature embedded in this actor's tripwires. */

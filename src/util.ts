@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { isIPv4 } from 'node:net';
+import { isIP, isIPv4 } from 'node:net';
 
 export const uid = () => randomUUID();
 
@@ -32,17 +32,44 @@ export function seeded(seed: string): () => number {
   };
 }
 
-export function clientIp(req: IncomingMessage, trustProxy: boolean): string {
-  let ip = req.socket.remoteAddress ?? '0.0.0.0';
-  if (trustProxy) {
-    const cf = req.headers['cf-connecting-ip'];
-    const xff = req.headers['x-forwarded-for'];
-    const xr = req.headers['x-real-ip'];
-    if (typeof cf === 'string' && cf) ip = cf.trim();
-    else if (typeof xff === 'string' && xff) ip = xff.split(',')[0]!.trim();
-    else if (typeof xr === 'string' && xr) ip = xr.trim();
-  }
+/** The address of the hop that connected to us. */
+export function peerIp(req: IncomingMessage): string {
+  const ip = req.socket.remoteAddress ?? '0.0.0.0';
   return ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+}
+
+/** How many proxies in front of EasyPot are trusted to append to X-Forwarded-For. */
+export function trustedHops(trustProxy: boolean | number): number {
+  if (trustProxy === true) return 1;
+  if (typeof trustProxy === 'number' && Number.isFinite(trustProxy)) return Math.max(0, Math.floor(trustProxy));
+  return 0;
+}
+
+/**
+ * The client's real address. Each trusted proxy appends the address it received the request
+ * from to X-Forwarded-For, so with N trusted proxies the client is the Nth entry from the right.
+ * Everything further left was written by the client and is ignored: taking the leftmost entry
+ * would let an attacker dodge blocks, or get any address of their choosing blocked and pushed
+ * to every firewall reading the feed.
+ */
+export function clientIp(req: IncomingMessage, trustProxy: boolean | number): string {
+  const peer = peerIp(req);
+  const hops = trustedHops(trustProxy);
+  if (!hops) return peer;
+  const raw = req.headers['x-forwarded-for'];
+  const xff = (Array.isArray(raw) ? raw.join(',') : raw ?? '').split(',').map(s => s.trim()).filter(Boolean);
+  if (xff.length) {
+    // Fewer entries than trusted hops means the request skipped a proxy; the leftmost is then the closest we have.
+    const ip = xff[Math.max(0, xff.length - hops)]!;
+    const norm = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+    if (isIP(norm)) return norm;
+  }
+  // Proxies that set a single-address header instead (Cloudflare Tunnel, some nginx setups).
+  for (const h of ['cf-connecting-ip', 'x-real-ip']) {
+    const v = req.headers[h];
+    if (typeof v === 'string' && isIP(v.trim())) return v.trim();
+  }
+  return peer;
 }
 
 function ipv4ToInt(ip: string): number {

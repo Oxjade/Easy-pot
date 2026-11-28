@@ -23,8 +23,11 @@ export interface Config {
   listen: { host: string; port: number };
   upstream: string;
   preserveHost: boolean;
-  /** Trust X-Forwarded-For / CF-Connecting-IP from the hop in front of EasyPot. */
-  trustProxy: boolean;
+  /**
+   * How many proxies in front of EasyPot to trust for the client address: false or 0 for none,
+   * true or 1 for one (a load balancer or Cloudflare), 2 for Cloudflare in front of a load balancer.
+   */
+  trustProxy: boolean | number;
   siteName: string;
   /** Stacks to tailor decoys for: generic, wordpress, laravel, nextjs, spring, php, node. */
   stack: string[];
@@ -134,7 +137,7 @@ export function loadConfig(path = process.env.EASYPOT_CONFIG ?? './easypot.confi
   if (env.EASYPOT_FEED_TOKEN) cfg.admin.feedToken = env.EASYPOT_FEED_TOKEN;
   if (env.EASYPOT_SECRET) cfg.secret = env.EASYPOT_SECRET;
   if (env.EASYPOT_DATA_DIR) cfg.dataDir = env.EASYPOT_DATA_DIR;
-  if (env.EASYPOT_TRUST_PROXY) cfg.trustProxy = env.EASYPOT_TRUST_PROXY === 'true';
+  if (env.EASYPOT_TRUST_PROXY) cfg.trustProxy = /^\d+$/.test(env.EASYPOT_TRUST_PROXY) ? Number(env.EASYPOT_TRUST_PROXY) : env.EASYPOT_TRUST_PROXY === 'true';
   if (env.EASYPOT_SITE_NAME) cfg.siteName = env.EASYPOT_SITE_NAME;
   if (!cfg.integrations.fileLog.path) cfg.integrations.fileLog.path = join(cfg.dataDir, 'events.jsonl');
   if (env.EASYPOT_PLAYGROUND) cfg.playground.enabled = env.EASYPOT_PLAYGROUND === 'true';

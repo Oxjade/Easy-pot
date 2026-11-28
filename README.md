@@ -55,7 +55,7 @@ EASYPOT_ADMIN_TOKEN=… EASYPOT_FEED_TOKEN=… EASYPOT_SECRET=… docker compose
 
 EasyPot is a reverse proxy. Put it wherever your traffic already flows:
 
-- **Behind Cloudflare, a load balancer or nginx:** set `trustProxy: true` so it reads the real client IP from `CF-Connecting-IP` or `X-Forwarded-For`.
+- **Behind Cloudflare, a load balancer or nginx:** set `trustProxy` to the number of proxies in front of EasyPot: `1` (or `true`) for one, `2` for Cloudflare in front of a load balancer. EasyPot reads the client address that many entries from the right of `X-Forwarded-For` and ignores anything further left, which the client can forge. Set it too high and clients can spoof their address; leave it at `false` when nothing sits in front.
 - **Directly on the edge:** terminate TLS in front of it (Caddy, nginx or a cloud LB) and forward to `:8080`.
 
 Your app receives `X-EasyPot-Score` and `X-EasyPot-Class` on every request. You can use them for your own decisions, such as step-up auth for risky sessions.

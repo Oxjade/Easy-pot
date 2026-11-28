@@ -219,5 +219,31 @@ await step('Wazuh-ready JSON log is written with srcip + MITRE', async () => {
   assert.equal(agent.mitre_id, 'T1595');
 });
 
+// ---- client address behind a proxy (trustProxy: one hop) ----
+await step('a spoofed X-Forwarded-For prefix cannot dodge a block', async () => {
+  await fetch(`http://127.0.0.1:${ADM}/api/blocks`, { method: 'POST', headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ target: '203.0.113.77', reason: 'spoof test' }) });
+  const r = await req('/about', { ip: '1.1.1.1, 203.0.113.77', headers: BROWSER });
+  assert.equal(r.status, 403);
+});
+
+await step('a forged X-Forwarded-For entry cannot get an innocent address blocked', async () => {
+  // The attacker writes 8.8.8.8 at the left; the load balancer appends the real address.
+  for (const p of ['/.env', '/.git/config', '/backup.sql']) await req(p, { ip: '8.8.8.8, 203.0.113.88', headers: { 'user-agent': 'curl/8.5' } });
+  await new Promise(r => setTimeout(r, 200));
+  const blocks = await admin('/api/blocks');
+  assert.ok(blocks.some(b => b.target === '203.0.113.88'), 'the real address is blocked');
+  assert.ok(!blocks.some(b => b.target === '8.8.8.8'), 'the forged address is not');
+  const feed = await (await fetch(`http://127.0.0.1:${ADM}/feeds/blocklist.txt?token=${FEED}`)).text();
+  assert.ok(!feed.includes('8.8.8.8'));
+});
+
+await step('the app behind EasyPot gets the resolved client in X-Real-IP and a correct chain', async () => {
+  const r = await req('/echo-headers', { ip: '9.9.9.9, 198.51.100.202', headers: BROWSER });
+  const h = JSON.parse(r.text);
+  assert.equal(h['x-real-ip'], '198.51.100.202');
+  assert.match(h['x-forwarded-for'], /^9\.9\.9\.9, 198\.51\.100\.202, (127\.0\.0\.1|::1)$/);
+});
+
 console.log(`\n${passed} passed`);
 cleanup(0);
