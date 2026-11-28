@@ -54,7 +54,7 @@ console.log('EasyPot playground');
 await step('serves the landing page at / and the attack range at /try, with a strict CSP', async () => {
   const home = await pg('/');
   assert.equal(home.status, 200);
-  assert.match(home.body, /Reverse shell for AI attacks/);
+  assert.match(home.body, /Reverse shell for AI(&nbsp;| )attacks/);
   const tr = await pg('/try');
   assert.equal(tr.status, 200);
   assert.match(tr.body, /Red-team our honeypot/);
