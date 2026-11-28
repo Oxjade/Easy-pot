@@ -1,0 +1,45 @@
+# Live demo: the EasyPot attack range on its own server, with automatic HTTPS.
+#   https://$DEMO_DOMAIN     landing page and attack range (/try)
+#   https://$TARGET_DOMAIN   the EasyPot-protected fake app that agents attack
+#   127.0.0.1:8081           dashboard, only from the server itself (use an SSH tunnel)
+# Only for a dedicated demo server. Never point this at a real site.
+services:
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:?set DEMO_DOMAIN in .env}
+      TARGET_DOMAIN: ${TARGET_DOMAIN:?set TARGET_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      easypot:
+        condition: service_healthy
+
+  easypot:
+    build: ../..
+    image: easypot:latest
+    restart: unless-stopped
+    environment:
+      EASYPOT_PLAYGROUND: "true"
+      EASYPOT_PLAYGROUND_TARGET_URL: https://${TARGET_DOMAIN}
+      # Caddy is the one proxy in front; it replaces any X-Forwarded-For the client sends.
+      EASYPOT_TRUST_PROXY: "1"
+      EASYPOT_SITE_NAME: ${SITE_NAME:-Northwind Pay}
+      EASYPOT_SECRET: ${EASYPOT_SECRET:?set EASYPOT_SECRET in .env}
+      EASYPOT_ADMIN_TOKEN: ${EASYPOT_ADMIN_TOKEN:?set EASYPOT_ADMIN_TOKEN in .env}
+      EASYPOT_FEED_TOKEN: ${EASYPOT_FEED_TOKEN:?set EASYPOT_FEED_TOKEN in .env}
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - easypot-data:/var/lib/easypot
+
+volumes:
+  caddy-data:
+  caddy-config:
+  easypot-data:

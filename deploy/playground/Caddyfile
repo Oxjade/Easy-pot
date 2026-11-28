@@ -1,0 +1,14 @@
+# Landing page and attack range.
+{$DEMO_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+	reverse_proxy easypot:8082
+}
+
+# The protected fake app agents attack. No extra headers: it should look like an ordinary site.
+{$TARGET_DOMAIN} {
+	header -Server
+	reverse_proxy easypot:8080
+}
